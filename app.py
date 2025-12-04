@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import json
+from io import BytesIO
 
 from data_models import (
     get_sample_units, get_sample_routes, get_sample_schedules,
@@ -12,6 +13,20 @@ from data_models import (
     time_str_to_minutes, minutes_to_time_str, OperationalParameters
 )
 from optimization_engine import OptimizationEngine, Assignment
+from db_operations import (
+    get_units_df, get_routes_df, get_schedules_df,
+    add_unit, update_unit, delete_unit,
+    add_route, update_route, delete_route,
+    add_schedule, update_schedule, delete_schedule,
+    save_assignments, save_optimization_run,
+    get_historical_assignments, get_optimization_history,
+    get_audit_logs, get_alerts, resolve_alert,
+    save_scenario, get_scenarios, check_thresholds, seed_initial_data
+)
+from database import init_db
+
+init_db()
+seed_initial_data()
 
 st.set_page_config(
     page_title="Modul Analisis Logistik",
@@ -22,11 +37,11 @@ st.set_page_config(
 
 def init_session_state():
     if 'units_df' not in st.session_state:
-        st.session_state.units_df = get_sample_units()
+        st.session_state.units_df = get_units_df()
     if 'routes_df' not in st.session_state:
-        st.session_state.routes_df = get_sample_routes()
+        st.session_state.routes_df = get_routes_df()
     if 'schedules_df' not in st.session_state:
-        st.session_state.schedules_df = get_sample_schedules()
+        st.session_state.schedules_df = get_schedules_df()
     if 'assignments' not in st.session_state:
         st.session_state.assignments = []
     if 'unassigned' not in st.session_state:
@@ -37,6 +52,17 @@ def init_session_state():
         st.session_state.last_optimization_date = None
     if 'params' not in st.session_state:
         st.session_state.params = OperationalParameters()
+    if 'thresholds' not in st.session_state:
+        st.session_state.thresholds = {
+            'min_coverage_rate': 80,
+            'min_utilization_rate': 60,
+            'min_avg_score': 0.6
+        }
+
+def refresh_data():
+    st.session_state.units_df = get_units_df()
+    st.session_state.routes_df = get_routes_df()
+    st.session_state.schedules_df = get_schedules_df()
 
 def render_sidebar():
     with st.sidebar:
@@ -45,7 +71,8 @@ def render_sidebar():
         page = st.radio(
             "Pilih Menu:",
             ["Dashboard", "Data Unit", "Data Rute", "Data Jadwal", 
-             "Optimasi Penugasan", "Laporan & Analitik", "Pengaturan"],
+             "Optimasi Penugasan", "Monitoring & Alert", "Analisis Skenario",
+             "Laporan & Analitik", "Audit Trail", "Pengaturan"],
             label_visibility="collapsed"
         )
         
@@ -204,7 +231,7 @@ def render_units_page():
             
             if st.form_submit_button("Tambah Unit", type="primary"):
                 if new_id and new_name and new_routes:
-                    new_unit = pd.DataFrame([{
+                    unit_data = {
                         'unit_id': new_id,
                         'name': new_name,
                         'capacity': new_capacity,
@@ -213,10 +240,13 @@ def render_units_page():
                         'status': new_status,
                         'home_location': new_location,
                         'allowed_routes': json.dumps(new_routes)
-                    }])
-                    st.session_state.units_df = pd.concat([st.session_state.units_df, new_unit], ignore_index=True)
-                    st.success(f"Unit {new_name} berhasil ditambahkan!")
-                    st.rerun()
+                    }
+                    if add_unit(unit_data):
+                        refresh_data()
+                        st.success(f"Unit {new_name} berhasil ditambahkan!")
+                        st.rerun()
+                    else:
+                        st.error("Gagal menambahkan unit. ID mungkin sudah ada.")
                 else:
                     st.error("Mohon lengkapi semua field yang diperlukan")
     
@@ -259,24 +289,33 @@ def render_units_page():
                         )
                     
                     if st.form_submit_button("Simpan Perubahan", type="primary"):
-                        st.session_state.units_df.loc[unit_idx, 'name'] = edit_name
-                        st.session_state.units_df.loc[unit_idx, 'capacity'] = edit_capacity
-                        st.session_state.units_df.loc[unit_idx, 'fuel_efficiency'] = edit_efficiency
-                        st.session_state.units_df.loc[unit_idx, 'operational_cost_per_km'] = edit_cost
-                        st.session_state.units_df.loc[unit_idx, 'status'] = edit_status
-                        st.session_state.units_df.loc[unit_idx, 'home_location'] = edit_location
-                        st.session_state.units_df.loc[unit_idx, 'allowed_routes'] = json.dumps(edit_routes)
-                        st.success(f"Unit {edit_name} berhasil diperbarui!")
-                        st.rerun()
+                        update_data = {
+                            'name': edit_name,
+                            'capacity': edit_capacity,
+                            'fuel_efficiency': edit_efficiency,
+                            'operational_cost_per_km': edit_cost,
+                            'status': edit_status,
+                            'home_location': edit_location,
+                            'allowed_routes': json.dumps(edit_routes)
+                        }
+                        if update_unit(selected_unit_id, update_data):
+                            refresh_data()
+                            st.success(f"Unit {edit_name} berhasil diperbarui!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal memperbarui unit.")
                 
                 st.divider()
                 
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del2:
                     if st.button("Hapus Unit", type="secondary", use_container_width=True):
-                        st.session_state.units_df = st.session_state.units_df.drop(unit_idx).reset_index(drop=True)
-                        st.success(f"Unit {unit_data['name']} berhasil dihapus!")
-                        st.rerun()
+                        if delete_unit(selected_unit_id):
+                            refresh_data()
+                            st.success(f"Unit {unit_data['name']} berhasil dihapus!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal menghapus unit.")
 
 def render_routes_page():
     st.title("Data Rute")
@@ -345,7 +384,7 @@ def render_routes_page():
             
             if st.form_submit_button("Tambah Rute", type="primary"):
                 if new_route_id and new_route_name and new_origin and new_destination:
-                    new_route = pd.DataFrame([{
+                    route_data = {
                         'route_id': new_route_id,
                         'name': new_route_name,
                         'origin': new_origin,
@@ -354,10 +393,13 @@ def render_routes_page():
                         'estimated_time_minutes': new_time,
                         'route_type': new_type,
                         'required_capacity': new_req_capacity
-                    }])
-                    st.session_state.routes_df = pd.concat([st.session_state.routes_df, new_route], ignore_index=True)
-                    st.success(f"Rute {new_route_name} berhasil ditambahkan!")
-                    st.rerun()
+                    }
+                    if add_route(route_data):
+                        refresh_data()
+                        st.success(f"Rute {new_route_name} berhasil ditambahkan!")
+                        st.rerun()
+                    else:
+                        st.error("Gagal menambahkan rute. ID mungkin sudah ada.")
                 else:
                     st.error("Mohon lengkapi semua field yang diperlukan")
     
@@ -394,24 +436,33 @@ def render_routes_page():
                         edit_req_capacity = st.number_input("Kapasitas Minimum", min_value=10, max_value=60, value=int(route_data['required_capacity']))
                     
                     if st.form_submit_button("Simpan Perubahan", type="primary"):
-                        st.session_state.routes_df.loc[route_idx, 'name'] = edit_route_name
-                        st.session_state.routes_df.loc[route_idx, 'origin'] = edit_origin
-                        st.session_state.routes_df.loc[route_idx, 'destination'] = edit_destination
-                        st.session_state.routes_df.loc[route_idx, 'distance_km'] = edit_distance
-                        st.session_state.routes_df.loc[route_idx, 'estimated_time_minutes'] = edit_time
-                        st.session_state.routes_df.loc[route_idx, 'route_type'] = edit_type
-                        st.session_state.routes_df.loc[route_idx, 'required_capacity'] = edit_req_capacity
-                        st.success(f"Rute {edit_route_name} berhasil diperbarui!")
-                        st.rerun()
+                        update_data = {
+                            'name': edit_route_name,
+                            'origin': edit_origin,
+                            'destination': edit_destination,
+                            'distance_km': edit_distance,
+                            'estimated_time_minutes': edit_time,
+                            'route_type': edit_type,
+                            'required_capacity': edit_req_capacity
+                        }
+                        if update_route(selected_route_id, update_data):
+                            refresh_data()
+                            st.success(f"Rute {edit_route_name} berhasil diperbarui!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal memperbarui rute.")
                 
                 st.divider()
                 
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del2:
                     if st.button("Hapus Rute", type="secondary", use_container_width=True):
-                        st.session_state.routes_df = st.session_state.routes_df.drop(route_idx).reset_index(drop=True)
-                        st.success(f"Rute {route_data['name']} berhasil dihapus!")
-                        st.rerun()
+                        if delete_route(selected_route_id):
+                            refresh_data()
+                            st.success(f"Rute {route_data['name']} berhasil dihapus!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal menghapus rute.")
 
 def render_schedules_page():
     st.title("Data Jadwal")
@@ -480,16 +531,19 @@ def render_schedules_page():
             
             if st.form_submit_button("Tambah Jadwal", type="primary"):
                 if new_sched_id and new_sched_route and new_days:
-                    new_schedule = pd.DataFrame([{
+                    schedule_data = {
                         'schedule_id': new_sched_id,
                         'route_id': new_sched_route,
                         'departure_time': new_departure.strftime("%H:%M"),
                         'operating_days': json.dumps(new_days),
                         'priority': new_priority
-                    }])
-                    st.session_state.schedules_df = pd.concat([st.session_state.schedules_df, new_schedule], ignore_index=True)
-                    st.success(f"Jadwal {new_sched_id} berhasil ditambahkan!")
-                    st.rerun()
+                    }
+                    if add_schedule(schedule_data):
+                        refresh_data()
+                        st.success(f"Jadwal {new_sched_id} berhasil ditambahkan!")
+                        st.rerun()
+                    else:
+                        st.error("Gagal menambahkan jadwal. ID mungkin sudah ada.")
                 else:
                     st.error("Mohon lengkapi semua field yang diperlukan")
     
@@ -544,21 +598,30 @@ def render_schedules_page():
                         edit_priority = st.selectbox("Prioritas", priority_options, index=current_priority_idx, help="1 = Tertinggi, 3 = Terendah")
                     
                     if st.form_submit_button("Simpan Perubahan", type="primary"):
-                        st.session_state.schedules_df.loc[sched_idx, 'route_id'] = edit_sched_route
-                        st.session_state.schedules_df.loc[sched_idx, 'departure_time'] = edit_departure.strftime("%H:%M")
-                        st.session_state.schedules_df.loc[sched_idx, 'operating_days'] = json.dumps(edit_days)
-                        st.session_state.schedules_df.loc[sched_idx, 'priority'] = edit_priority
-                        st.success(f"Jadwal {selected_schedule_id} berhasil diperbarui!")
-                        st.rerun()
+                        update_data = {
+                            'route_id': edit_sched_route,
+                            'departure_time': edit_departure.strftime("%H:%M"),
+                            'operating_days': json.dumps(edit_days),
+                            'priority': edit_priority
+                        }
+                        if update_schedule(selected_schedule_id, update_data):
+                            refresh_data()
+                            st.success(f"Jadwal {selected_schedule_id} berhasil diperbarui!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal memperbarui jadwal.")
                 
                 st.divider()
                 
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del2:
                     if st.button("Hapus Jadwal", type="secondary", use_container_width=True):
-                        st.session_state.schedules_df = st.session_state.schedules_df.drop(sched_idx).reset_index(drop=True)
-                        st.success(f"Jadwal {selected_schedule_id} berhasil dihapus!")
-                        st.rerun()
+                        if delete_schedule(selected_schedule_id):
+                            refresh_data()
+                            st.success(f"Jadwal {selected_schedule_id} berhasil dihapus!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal menghapus jadwal.")
 
 def render_optimization_page():
     st.title("Optimasi Penugasan")
@@ -609,7 +672,19 @@ def render_optimization_page():
                 st.session_state.metrics = metrics
                 st.session_state.last_optimization_date = target_datetime
                 
-            st.success(f"Optimasi selesai! {len(assignments)} penugasan berhasil dibuat.")
+                save_assignments(assignments, target_datetime)
+                params_dict = {
+                    'turnaround': st.session_state.params.turnaround_time_minutes,
+                    'rest_time': st.session_state.params.minimum_rest_time_minutes,
+                    'fuel_price': st.session_state.params.fuel_price_per_liter
+                }
+                save_optimization_run(metrics, target_datetime, params_dict)
+                
+                alerts_count = check_thresholds(metrics, st.session_state.thresholds)
+                if alerts_count > 0:
+                    st.warning(f"{alerts_count} alert baru terdeteksi. Periksa halaman Monitoring.")
+                
+            st.success(f"Optimasi selesai! {len(assignments)} penugasan berhasil dibuat dan disimpan.")
             st.rerun()
     
     st.divider()
@@ -964,6 +1039,342 @@ def render_settings_page():
             st.success("Data jadwal berhasil direset!")
             st.rerun()
 
+def render_monitoring_page():
+    st.title("Monitoring & Alert")
+    st.markdown("Pantau status operasional dan kelola alert sistem")
+    
+    tab1, tab2, tab3 = st.tabs(["Alert Aktif", "Riwayat Optimasi", "Threshold Settings"])
+    
+    with tab1:
+        st.subheader("Alert Aktif")
+        
+        alerts_df = get_alerts(include_resolved=False)
+        
+        if len(alerts_df) == 0:
+            st.success("Tidak ada alert aktif saat ini.")
+        else:
+            for idx, alert in alerts_df.iterrows():
+                severity_color = {"warning": "orange", "info": "blue", "critical": "red"}.get(alert['severity'], "gray")
+                
+                with st.container():
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    with col1:
+                        st.markdown(f"**{alert['alert_type']}** - {alert['message']}")
+                        st.caption(f"Dibuat: {alert['created_at']}")
+                    with col2:
+                        st.markdown(f":{severity_color}[{alert['severity'].upper()}]")
+                    with col3:
+                        if st.button("Resolve", key=f"resolve_{alert['id']}"):
+                            if resolve_alert(alert['id']):
+                                st.success("Alert resolved!")
+                                st.rerun()
+                    st.divider()
+        
+        st.subheader("Semua Alert")
+        all_alerts = get_alerts(include_resolved=True)
+        if len(all_alerts) > 0:
+            st.dataframe(
+                all_alerts,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "created_at": st.column_config.DatetimeColumn("Waktu", format="DD/MM/YYYY HH:mm"),
+                    "is_resolved": st.column_config.CheckboxColumn("Resolved")
+                }
+            )
+    
+    with tab2:
+        st.subheader("Riwayat Optimasi")
+        
+        history_df = get_optimization_history()
+        
+        if len(history_df) == 0:
+            st.info("Belum ada riwayat optimasi.")
+        else:
+            st.dataframe(
+                history_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "run_date": st.column_config.DatetimeColumn("Tanggal Run", format="DD/MM/YYYY HH:mm"),
+                    "target_date": st.column_config.DatetimeColumn("Target", format="DD/MM/YYYY"),
+                    "coverage_rate": st.column_config.ProgressColumn("Coverage", format="%.1f%%", min_value=0, max_value=100),
+                    "utilization_rate": st.column_config.ProgressColumn("Utilisasi", format="%.1f%%", min_value=0, max_value=100),
+                    "total_fuel_cost": st.column_config.NumberColumn("Biaya BBM", format="Rp %,.0f"),
+                    "average_score": st.column_config.NumberColumn("Skor Avg", format="%.2f")
+                }
+            )
+            
+            if len(history_df) > 1:
+                st.subheader("Trend Performa")
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=history_df['run_date'], y=history_df['coverage_rate'], 
+                                         mode='lines+markers', name='Coverage Rate'))
+                fig.add_trace(go.Scatter(x=history_df['run_date'], y=history_df['utilization_rate'], 
+                                         mode='lines+markers', name='Utilization Rate'))
+                fig.update_layout(title="Trend Coverage & Utilization", xaxis_title="Tanggal", yaxis_title="Persentase (%)")
+                st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        st.subheader("Threshold Settings")
+        st.markdown("Konfigurasi batas yang memicu alert otomatis")
+        
+        with st.form("threshold_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                min_coverage = st.number_input(
+                    "Minimum Coverage Rate (%)",
+                    min_value=50, max_value=100,
+                    value=st.session_state.thresholds.get('min_coverage_rate', 80),
+                    help="Alert jika coverage di bawah nilai ini"
+                )
+                
+                min_utilization = st.number_input(
+                    "Minimum Utilization Rate (%)",
+                    min_value=30, max_value=100,
+                    value=st.session_state.thresholds.get('min_utilization_rate', 60),
+                    help="Alert jika utilisasi di bawah nilai ini"
+                )
+            
+            with col2:
+                min_score = st.number_input(
+                    "Minimum Average Score",
+                    min_value=0.3, max_value=1.0,
+                    value=st.session_state.thresholds.get('min_avg_score', 0.6),
+                    step=0.05,
+                    help="Alert jika skor rata-rata di bawah nilai ini"
+                )
+            
+            if st.form_submit_button("Simpan Threshold", type="primary"):
+                st.session_state.thresholds = {
+                    'min_coverage_rate': min_coverage,
+                    'min_utilization_rate': min_utilization,
+                    'min_avg_score': min_score
+                }
+                st.success("Threshold berhasil disimpan!")
+
+def render_scenarios_page():
+    st.title("Analisis Skenario")
+    st.markdown("Bandingkan berbagai strategi penugasan dengan analisis what-if")
+    
+    tab1, tab2 = st.tabs(["Buat Skenario", "Perbandingan Skenario"])
+    
+    with tab1:
+        st.subheader("Buat Skenario Baru")
+        
+        with st.form("scenario_form"):
+            scenario_name = st.text_input("Nama Skenario", placeholder="Skenario Efisiensi BBM")
+            scenario_desc = st.text_area("Deskripsi", placeholder="Fokus pada minimasi biaya BBM...")
+            
+            st.markdown("**Parameter Skenario:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                s_turnaround = st.number_input("Waktu Turnaround (menit)", min_value=10, max_value=120, value=30)
+                s_rest_time = st.number_input("Waktu Istirahat (menit)", min_value=30, max_value=180, value=60)
+            
+            with col2:
+                s_fuel_price = st.number_input("Harga BBM (Rp/L)", min_value=5000, max_value=25000, value=12500)
+            
+            st.markdown("**Bobot Scoring:**")
+            col1, col2 = st.columns(2)
+            with col1:
+                s_w_capacity = st.slider("Bobot Kapasitas", 0.0, 1.0, 0.25, 0.05, key="s_cap")
+                s_w_distance = st.slider("Bobot Jarak", 0.0, 1.0, 0.20, 0.05, key="s_dist")
+            with col2:
+                s_w_availability = st.slider("Bobot Ketersediaan", 0.0, 1.0, 0.30, 0.05, key="s_avail")
+                s_w_cost = st.slider("Bobot Biaya", 0.0, 1.0, 0.25, 0.05, key="s_cost")
+            
+            is_baseline = st.checkbox("Jadikan sebagai baseline")
+            
+            if st.form_submit_button("Jalankan & Simpan Skenario", type="primary"):
+                if scenario_name:
+                    scenario_params = OperationalParameters(
+                        turnaround_time_minutes=s_turnaround,
+                        minimum_rest_time_minutes=s_rest_time,
+                        fuel_price_per_liter=float(s_fuel_price)
+                    )
+                    
+                    engine = OptimizationEngine(scenario_params)
+                    engine.weights = {
+                        'capacity': s_w_capacity,
+                        'distance': s_w_distance,
+                        'availability': s_w_availability,
+                        'cost': s_w_cost
+                    }
+                    
+                    target_date = datetime.now()
+                    assignments, unassigned = engine.optimize_assignments(
+                        st.session_state.units_df,
+                        st.session_state.routes_df,
+                        st.session_state.schedules_df,
+                        target_date
+                    )
+                    
+                    metrics = engine.calculate_metrics(
+                        assignments,
+                        st.session_state.units_df,
+                        st.session_state.routes_df,
+                        st.session_state.schedules_df,
+                        target_date
+                    )
+                    
+                    params = {
+                        'turnaround': s_turnaround,
+                        'rest_time': s_rest_time,
+                        'fuel_price': s_fuel_price,
+                        'weights': {
+                            'capacity': s_w_capacity,
+                            'distance': s_w_distance,
+                            'availability': s_w_availability,
+                            'cost': s_w_cost
+                        }
+                    }
+                    
+                    scenario_id = save_scenario(scenario_name, scenario_desc, params, metrics, is_baseline)
+                    if scenario_id:
+                        st.success(f"Skenario '{scenario_name}' berhasil dibuat!")
+                        st.rerun()
+                    else:
+                        st.error("Gagal menyimpan skenario.")
+                else:
+                    st.error("Nama skenario harus diisi.")
+    
+    with tab2:
+        st.subheader("Perbandingan Skenario")
+        
+        scenarios = get_scenarios()
+        
+        if not scenarios:
+            st.info("Belum ada skenario. Buat skenario baru di tab 'Buat Skenario'.")
+        else:
+            comparison_data = []
+            for s in scenarios:
+                results = s['results']
+                comparison_data.append({
+                    'Nama': s['name'],
+                    'Baseline': 'Ya' if s['is_baseline'] else 'Tidak',
+                    'Coverage (%)': results.get('coverage_rate', 0),
+                    'Utilisasi (%)': results.get('utilization_rate', 0),
+                    'Biaya BBM': results.get('total_fuel_cost', 0),
+                    'Skor Avg': results.get('average_score', 0),
+                    'Dibuat': s['created_at']
+                })
+            
+            comparison_df = pd.DataFrame(comparison_data)
+            st.dataframe(
+                comparison_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Coverage (%)": st.column_config.ProgressColumn("Coverage", format="%.1f%%", min_value=0, max_value=100),
+                    "Utilisasi (%)": st.column_config.ProgressColumn("Utilisasi", format="%.1f%%", min_value=0, max_value=100),
+                    "Biaya BBM": st.column_config.NumberColumn("Biaya BBM", format="Rp %,.0f"),
+                    "Skor Avg": st.column_config.NumberColumn("Skor", format="%.2f")
+                }
+            )
+            
+            if len(comparison_df) > 1:
+                st.subheader("Visualisasi Perbandingan")
+                
+                fig = go.Figure()
+                fig.add_trace(go.Bar(name='Coverage', x=comparison_df['Nama'], y=comparison_df['Coverage (%)']))
+                fig.add_trace(go.Bar(name='Utilisasi', x=comparison_df['Nama'], y=comparison_df['Utilisasi (%)']))
+                fig.update_layout(barmode='group', title="Perbandingan Coverage & Utilisasi")
+                st.plotly_chart(fig, use_container_width=True)
+                
+                fig2 = px.bar(comparison_df, x='Nama', y='Biaya BBM', title="Perbandingan Biaya BBM")
+                st.plotly_chart(fig2, use_container_width=True)
+
+def render_audit_page():
+    st.title("Audit Trail")
+    st.markdown("Riwayat perubahan dan aktivitas sistem")
+    
+    tab1, tab2 = st.tabs(["Log Aktivitas", "Riwayat Penugasan"])
+    
+    with tab1:
+        st.subheader("Log Aktivitas Terbaru")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            entity_filter = st.selectbox(
+                "Filter berdasarkan entitas:",
+                ["Semua", "Unit", "Route", "Schedule", "Assignment", "OPTIMIZATION"]
+            )
+        with col2:
+            limit = st.number_input("Jumlah log:", min_value=10, max_value=500, value=100)
+        
+        entity_type = None if entity_filter == "Semua" else entity_filter
+        audit_logs = get_audit_logs(entity_type=entity_type, limit=limit)
+        
+        if len(audit_logs) == 0:
+            st.info("Belum ada log aktivitas.")
+        else:
+            st.dataframe(
+                audit_logs,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "timestamp": st.column_config.DatetimeColumn("Waktu", format="DD/MM/YYYY HH:mm:ss"),
+                    "action": "Aksi",
+                    "entity_type": "Entitas",
+                    "entity_id": "ID",
+                    "details": "Detail"
+                }
+            )
+            
+            output = BytesIO()
+            audit_logs.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)
+            
+            st.download_button(
+                label="Download Audit Log (Excel)",
+                data=output,
+                file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    with tab2:
+        st.subheader("Riwayat Penugasan")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input("Dari tanggal:", value=datetime.now().date() - timedelta(days=30))
+        with col2:
+            end_date = st.date_input("Sampai tanggal:", value=datetime.now().date())
+        
+        start_datetime = datetime.combine(start_date, datetime.min.time())
+        end_datetime = datetime.combine(end_date, datetime.max.time())
+        
+        hist_assignments = get_historical_assignments(start_datetime, end_datetime)
+        
+        if len(hist_assignments) == 0:
+            st.info("Tidak ada riwayat penugasan dalam periode ini.")
+        else:
+            st.dataframe(
+                hist_assignments,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "assignment_date": st.column_config.DatetimeColumn("Tanggal", format="DD/MM/YYYY"),
+                    "total_score": st.column_config.ProgressColumn("Skor", format="%.2f", min_value=0, max_value=1),
+                    "fuel_cost": st.column_config.NumberColumn("Biaya BBM", format="Rp %,.0f")
+                }
+            )
+            
+            output = BytesIO()
+            hist_assignments.to_excel(output, index=False, engine='openpyxl')
+            output.seek(0)
+            
+            st.download_button(
+                label="Download Riwayat Penugasan (Excel)",
+                data=output,
+                file_name=f"assignment_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
 def main():
     init_session_state()
     
@@ -979,8 +1390,14 @@ def main():
         render_schedules_page()
     elif page == "Optimasi Penugasan":
         render_optimization_page()
+    elif page == "Monitoring & Alert":
+        render_monitoring_page()
+    elif page == "Analisis Skenario":
+        render_scenarios_page()
     elif page == "Laporan & Analitik":
         render_reports_page()
+    elif page == "Audit Trail":
+        render_audit_page()
     elif page == "Pengaturan":
         render_settings_page()
 
