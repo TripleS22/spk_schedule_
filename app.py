@@ -268,7 +268,12 @@ def render_units_page():
             with col2:
                 new_cost = st.number_input("Biaya Operasional/km", min_value=100, max_value=10000, value=2500)
                 new_status = st.selectbox("Status", ["Available", "Maintenance"])
-                new_location = st.selectbox("Lokasi Asal", ["Terminal A", "Terminal B", "Terminal C"])
+
+                # Get available locations from database
+                locations_df = get_locations_df()
+                location_options = ["Belum Dipilih"] + locations_df['name'].tolist() if not locations_df.empty else ["Terminal A", "Terminal B", "Terminal C"]
+                new_location = st.selectbox("Lokasi Asal", location_options)
+
                 new_routes = st.multiselect(
                     "Rute Diizinkan",
                     st.session_state.routes_df['route_id'].tolist()
@@ -324,8 +329,19 @@ def render_units_page():
                         edit_cost = st.number_input("Biaya Operasional/km", min_value=100, max_value=10000, value=int(unit_data['operational_cost_per_km']))
                         status_options = ["Available", "Maintenance"]
                         edit_status = st.selectbox("Status", status_options, index=status_options.index(unit_data['status']) if unit_data['status'] in status_options else 0)
-                        location_options = ["Terminal A", "Terminal B", "Terminal C"]
-                        edit_location = st.selectbox("Lokasi Asal", location_options, index=location_options.index(unit_data['home_location']) if unit_data['home_location'] in location_options else 0)
+
+                        # Get available locations from database
+                        locations_df = get_locations_df()
+                        location_options = ["Belum Dipilih"] + locations_df['name'].tolist() if not locations_df.empty else ["Terminal A", "Terminal B", "Terminal C"]
+
+                        # Find the index of the current location in the options
+                        try:
+                            current_location_index = location_options.index(unit_data['home_location'])
+                        except ValueError:
+                            current_location_index = 0  # Default to "Belum Dipilih"
+
+                        edit_location = st.selectbox("Lokasi Asal", location_options, index=current_location_index)
+
                         current_routes = parse_allowed_routes(unit_data['allowed_routes'])
                         edit_routes = st.multiselect(
                             "Rute Diizinkan",
