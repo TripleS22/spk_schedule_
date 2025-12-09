@@ -1825,8 +1825,15 @@ def render_locations_page():
                 locations_df = get_locations_df()
                 current_location_name = locations_df[locations_df['location_id'] == selected_location_id]['name'].iloc[0] if not locations_df.empty else ""
 
+                print(f"Current location name: '{current_location_name}'")
+                print(f"All unit home locations: {st.session_state.units_df['home_location'].tolist()}")
+
                 # Get associated units
-                associated_units_count = len(st.session_state.units_df[st.session_state.units_df['home_location'] == current_location_name])
+                associated_units = st.session_state.units_df[st.session_state.units_df['home_location'] == current_location_name]
+                associated_units_count = len(associated_units)
+
+                print(f"Associated units count: {associated_units_count}")
+                print(f"Associated units: {associated_units['home_location'].tolist() if not associated_units.empty else []}")
 
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del2:
@@ -1835,13 +1842,18 @@ def render_locations_page():
                         st.button("Hapus Lokasi", type="secondary", use_container_width=True, disabled=True)
                         st.info("Untuk menghapus lokasi, pindahkan dulu unit yang terkait ke lokasi lain")
                     else:
-                        if st.button("Hapus Lokasi", type="secondary", use_container_width=True):
-                            if st.button("Konfirmasi Hapus", key="confirm_delete_location", type="secondary", use_container_width=True):
-                                if delete_location(selected_location_id):
-                                    st.success(f"Lokasi {location_data['name']} berhasil dihapus!")
-                                    st.rerun()
-                                else:
-                                    st.error("Gagal menghapus lokasi.")
+                        # Simple confirmation using a button with confirmation text
+                        delete_clicked = st.button("Hapus Lokasi", type="secondary", use_container_width=True)
+                        print(f"Hapus lokasi button clicked: {delete_clicked}")
+                        if delete_clicked:
+                            print(f"Attempting to delete location with ID: {selected_location_id}")
+                            result = delete_location(selected_location_id)
+                            print(f"Delete location result: {result}")
+                            if result:
+                                st.success(f"Lokasi {location_data['name']} berhasil dihapus!")
+                                st.rerun()
+                            else:
+                                st.error("Gagal menghapus lokasi. Pastikan tidak ada unit yang terkait dengan lokasi ini.")
 
 def render_audit_page():
     st.title("Audit Trail")

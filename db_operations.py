@@ -856,25 +856,38 @@ def delete_location(location_id: str):
     try:
         location = db.query(Location).filter(Location.location_id == location_id).first()
         if location:
+            print(f"Attempting to delete location: '{location.name}' (ID: {location_id})")
+
             # Check if there are units associated with this location
-            associated_units = db.query(Unit).filter(Unit.home_location == location.name).all()
+            # Using strip() to handle potential whitespace issues
+            associated_units = db.query(Unit).filter(Unit.home_location == location.name.strip()).all()
+
+            print(f"Found {len(associated_units)} associated units for location '{location.name}'")
 
             if associated_units:
                 # Don't delete the location if there are associated units
-                print(f"Cannot delete location {location.name} because it has {len(associated_units)} associated unit(s)")
+                print(f"Cannot delete location '{location.name}' because it has {len(associated_units)} associated unit(s)")
+                for unit in associated_units:
+                    print(f"  - Unit {unit.unit_id}: {unit.name}")
                 return False
 
             old_values = {'location_id': location.location_id, 'name': location.name}
+            print(f"Deleting location '{location.name}' with ID {location_id}")
 
             # Delete the location (no units to worry about)
             db.delete(location)
             db.commit()
             log_audit(db, 'DELETE', 'Location', location_id, old_values=old_values)
+            print(f"Location '{location.name}' successfully deleted from database")
             return True
-        return False
+        else:
+            print(f"Location with ID {location_id} not found")
+            return False
     except Exception as e:
         db.rollback()
         print(f"Error deleting location: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         return False
     finally:
         db.close()
