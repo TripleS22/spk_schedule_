@@ -21,7 +21,8 @@ from db_operations import (
     save_assignments, save_optimization_run,
     get_historical_assignments, get_optimization_history,
     get_audit_logs, get_alerts, resolve_alert,
-    save_scenario, get_scenarios, check_thresholds, seed_initial_data
+    save_scenario, get_scenarios, check_thresholds, seed_initial_data,
+    delete_all_units, delete_all_routes, delete_all_schedules, delete_all_assignments, delete_all_data
 )
 from database import init_db
 
@@ -70,9 +71,9 @@ def render_sidebar():
         
         page = st.radio(
             "Pilih Menu:",
-            ["Dashboard", "Data Unit", "Data Rute", "Data Jadwal", 
+            ["Dashboard", "Data Unit", "Data Rute", "Data Jadwal",
              "Optimasi Penugasan", "Monitoring & Alert", "Analisis Skenario",
-             "Laporan & Analitik", "Audit Trail", "Pengaturan"],
+             "Laporan & Analitik", "Analisis Idle Time", "Audit Trail", "Pengaturan"],
             label_visibility="collapsed"
         )
         
@@ -110,12 +111,44 @@ def render_dashboard():
             st.metric("Tingkat Cakupan", f"{st.session_state.metrics.get('coverage_rate', 0):.1f}%")
         else:
             st.metric("Tingkat Cakupan", "Belum dihitung")
-    
+
     with col4:
         if st.session_state.metrics:
             st.metric("Utilisasi Unit", f"{st.session_state.metrics.get('utilization_rate', 0):.1f}%")
         else:
             st.metric("Utilisasi Unit", "Belum dihitung")
+
+    # Add additional metrics row
+    col5, col6, col7, col8 = st.columns(4)
+
+    with col5:
+        if st.session_state.metrics:
+            avg_idle_time = st.session_state.metrics.get('average_idle_time_minutes', 0)
+            avg_idle_hours = avg_idle_time / 60  # Convert to hours
+            st.metric("Rata-rata Idle Time", f"{avg_idle_hours:.1f} jam")
+        else:
+            st.metric("Rata-rata Idle Time", "Belum dihitung")
+
+    with col6:
+        if st.session_state.metrics:
+            st.metric("Unit Digunakan", st.session_state.metrics.get('units_used', 0))
+        else:
+            st.metric("Unit Digunakan", "Belum dihitung")
+
+    with col7:
+        if st.session_state.metrics:
+            total_idle_time = st.session_state.metrics.get('total_idle_time_minutes', 0)
+            total_idle_hours = total_idle_time / 60
+            st.metric("Total Idle Time", f"{total_idle_hours:.1f} jam")
+        else:
+            st.metric("Total Idle Time", "Belum dihitung")
+
+    with col8:
+        if st.session_state.metrics:
+            avg_score = st.session_state.metrics.get('average_score', 0)
+            st.metric("Skor Rata-rata", f"{avg_score:.2f}")
+        else:
+            st.metric("Skor Rata-rata", "Belum dihitung")
     
     st.divider()
     
@@ -149,22 +182,33 @@ def render_dashboard():
     
     if st.session_state.assignments:
         st.subheader("Penugasan Terkini")
-        
+
         assignments_data = []
         for a in st.session_state.assignments[:10]:
-            route = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id].iloc[0]
-            unit = st.session_state.units_df[st.session_state.units_df['unit_id'] == a.unit_id].iloc[0]
-            assignments_data.append({
-                'Jadwal': a.schedule_id,
-                'Unit': unit['name'],
-                'Rute': route['name'],
-                'Berangkat': a.departure_time,
-                'Kembali': a.estimated_return_time,
-                'Skor': f"{a.total_score:.2f}",
-                'Status': a.status
-            })
-        
-        st.dataframe(pd.DataFrame(assignments_data), use_container_width=True, hide_index=True)
+            # Safely get route and unit data, skip if not found (in case data was deleted)
+            route_row = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id]
+            unit_row = st.session_state.units_df[st.session_state.units_df['unit_id'] == a.unit_id]
+
+            if not route_row.empty and not unit_row.empty:
+                route = route_row.iloc[0]
+                unit = unit_row.iloc[0]
+                assignments_data.append({
+                    'Jadwal': a.schedule_id,
+                    'Unit': unit['name'],
+                    'Rute': route['name'],
+                    'Berangkat': a.departure_time,
+                    'Kembali': a.estimated_return_time,
+                    'Skor': f"{a.total_score:.2f}",
+                    'Status': a.status
+                })
+            else:
+                # Skip this assignment if route or unit doesn't exist
+                continue
+
+        if assignments_data:
+            st.dataframe(pd.DataFrame(assignments_data), use_container_width=True, hide_index=True)
+        else:
+            st.info("Tidak ada penugasan valid saat ini.")
     else:
         st.info("Belum ada penugasan. Jalankan optimasi untuk menghasilkan penugasan.")
 
@@ -628,37 +672,37 @@ def render_optimization_page():
     st.markdown("Jalankan algoritma optimasi untuk menugaskan unit ke jadwal rute")
     
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         target_date = st.date_input(
             "Tanggal Target Optimasi",
             value=datetime.now().date(),
             help="Pilih tanggal untuk menjalankan optimasi penugasan"
         )
-        
+
         target_datetime = datetime.combine(target_date, datetime.min.time())
         day_name = get_day_name(target_datetime)
-        
+
         active_schedules_count = 0
         for _, schedule in st.session_state.schedules_df.iterrows():
             operating_days = parse_operating_days(schedule['operating_days'])
             if day_name in operating_days:
                 active_schedules_count += 1
-        
+
         st.info(f"Hari: {day_name} | Jadwal aktif: {active_schedules_count}")
-    
+
     with col2:
         if st.button("Jalankan Optimasi", type="primary", use_container_width=True):
             with st.spinner("Menjalankan algoritma optimasi..."):
                 engine = OptimizationEngine(st.session_state.params)
-                
+
                 assignments, unassigned = engine.optimize_assignments(
                     st.session_state.units_df,
                     st.session_state.routes_df,
                     st.session_state.schedules_df,
                     target_datetime
                 )
-                
+
                 metrics = engine.calculate_metrics(
                     assignments,
                     st.session_state.units_df,
@@ -666,12 +710,12 @@ def render_optimization_page():
                     st.session_state.schedules_df,
                     target_datetime
                 )
-                
+
                 st.session_state.assignments = assignments
                 st.session_state.unassigned = unassigned
                 st.session_state.metrics = metrics
                 st.session_state.last_optimization_date = target_datetime
-                
+
                 save_assignments(assignments, target_datetime)
                 params_dict = {
                     'turnaround': st.session_state.params.turnaround_time_minutes,
@@ -679,19 +723,19 @@ def render_optimization_page():
                     'fuel_price': st.session_state.params.fuel_price_per_liter
                 }
                 save_optimization_run(metrics, target_datetime, params_dict)
-                
+
                 alerts_count = check_thresholds(metrics, st.session_state.thresholds)
                 if alerts_count > 0:
                     st.warning(f"{alerts_count} alert baru terdeteksi. Periksa halaman Monitoring.")
-                
+
             st.success(f"Optimasi selesai! {len(assignments)} penugasan berhasil dibuat dan disimpan.")
             st.rerun()
-    
+
     st.divider()
-    
+
     if st.session_state.assignments:
         st.subheader("Hasil Penugasan")
-        
+
         col1, col2, col3, col4 = st.columns(4)
         with col1:
             st.metric("Jadwal Terlayani", st.session_state.metrics.get('assigned_count', 0))
@@ -701,25 +745,48 @@ def render_optimization_page():
             st.metric("Total Biaya BBM", f"Rp {st.session_state.metrics.get('total_fuel_cost', 0):,.0f}")
         with col4:
             st.metric("Skor Rata-rata", f"{st.session_state.metrics.get('average_score', 0):.2f}")
+
+        # Additional metrics including idle time
+        col5, col6, col7, col8 = st.columns(4)
+        with col5:
+            avg_idle_time = st.session_state.metrics.get('average_idle_time_minutes', 0)
+            avg_idle_hours = avg_idle_time / 60  # Convert to hours
+            st.metric("Rata-rata Idle Time", f"{avg_idle_hours:.1f} jam")
+        with col6:
+            st.metric("Unit Digunakan", st.session_state.metrics.get('units_used', 0))
+        with col7:
+            total_idle_time = st.session_state.metrics.get('total_idle_time_minutes', 0)
+            total_idle_hours = total_idle_time / 60
+            st.metric("Total Idle Time", f"{total_idle_hours:.1f} jam")
+        with col8:
+            st.metric("Unit Tersedia", st.session_state.metrics.get('units_available', 0))
         
         st.subheader("Detail Penugasan")
         
         assignments_data = []
         for a in st.session_state.assignments:
-            route = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id].iloc[0]
-            unit = st.session_state.units_df[st.session_state.units_df['unit_id'] == a.unit_id].iloc[0]
-            
-            assignments_data.append({
-                'Jadwal': a.schedule_id,
-                'Rute': route['name'],
-                'Unit': unit['name'],
-                'Kapasitas': unit['capacity'],
-                'Berangkat': a.departure_time,
-                'Kembali': a.estimated_return_time,
-                'Biaya BBM': f"Rp {a.fuel_cost:,.0f}",
-                'Skor': a.total_score,
-                'Alasan': a.assignment_reason
-            })
+            # Safely get route and unit data, skip if not found (in case data was deleted)
+            route_row = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id]
+            unit_row = st.session_state.units_df[st.session_state.units_df['unit_id'] == a.unit_id]
+
+            if not route_row.empty and not unit_row.empty:
+                route = route_row.iloc[0]
+                unit = unit_row.iloc[0]
+
+                assignments_data.append({
+                    'Jadwal': a.schedule_id,
+                    'Rute': route['name'],
+                    'Unit': unit['name'],
+                    'Kapasitas': unit['capacity'],
+                    'Berangkat': a.departure_time,
+                    'Kembali': a.estimated_return_time,
+                    'Biaya BBM': f"Rp {a.fuel_cost:,.0f}",
+                    'Skor': a.total_score,
+                    'Alasan': a.assignment_reason
+                })
+            else:
+                # Skip this assignment if route or unit doesn't exist
+                continue
         
         st.dataframe(
             pd.DataFrame(assignments_data),
@@ -741,13 +808,20 @@ def render_optimization_page():
             
             unassigned_data = []
             for u in st.session_state.unassigned:
-                route = st.session_state.routes_df[st.session_state.routes_df['route_id'] == u['route_id']].iloc[0]
-                unassigned_data.append({
-                    'Jadwal': u['schedule_id'],
-                    'Rute': route['name'],
-                    'Jam Berangkat': u['departure_time'],
-                    'Alasan': '; '.join(u['reasons'])
-                })
+                # Safely get route data, skip if not found (in case data was deleted)
+                route_row = st.session_state.routes_df[st.session_state.routes_df['route_id'] == u['route_id']]
+
+                if not route_row.empty:
+                    route = route_row.iloc[0]
+                    unassigned_data.append({
+                        'Jadwal': u['schedule_id'],
+                        'Rute': route['name'],
+                        'Jam Berangkat': u['departure_time'],
+                        'Alasan': '; '.join(u['reasons'])
+                    })
+                else:
+                    # Skip this unassigned if route doesn't exist
+                    continue
             
             st.dataframe(pd.DataFrame(unassigned_data), use_container_width=True, hide_index=True)
         
@@ -762,13 +836,22 @@ def render_optimization_page():
             unit_assignments[a.unit_id].append(a)
         
         for unit_id, assignments in unit_assignments.items():
-            unit = st.session_state.units_df[st.session_state.units_df['unit_id'] == unit_id].iloc[0]
-            
+            # Safely get unit data, skip if not found
+            unit_row = st.session_state.units_df[st.session_state.units_df['unit_id'] == unit_id]
+            if unit_row.empty:
+                continue
+            unit = unit_row.iloc[0]
+
             for a in assignments:
-                route = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id].iloc[0]
+                # Safely get route data, skip if not found
+                route_row = st.session_state.routes_df[st.session_state.routes_df['route_id'] == a.route_id]
+                if route_row.empty:
+                    continue
+                route = route_row.iloc[0]
+
                 start_minutes = time_str_to_minutes(a.departure_time)
                 end_minutes = time_str_to_minutes(a.estimated_return_time)
-                
+
                 fig.add_trace(go.Bar(
                     name=route['name'],
                     y=[unit['name']],
@@ -819,6 +902,21 @@ def render_reports_page():
         with col3:
             st.metric("Total Jarak", f"{metrics.get('total_distance', 0):,.0f} km")
             st.metric("Total Biaya BBM", f"Rp {metrics.get('total_fuel_cost', 0):,.0f}")
+
+        # Add idle time metrics if available
+        if 'average_idle_time_minutes' in metrics:
+            st.divider()
+            st.subheader("Metric Idle Time")
+            col_idle1, col_idle2, col_idle3 = st.columns(3)
+            with col_idle1:
+                avg_idle_hours = metrics.get('average_idle_time_minutes', 0) / 60
+                st.metric("Rata-rata Idle Time", f"{avg_idle_hours:.1f} jam")
+            with col_idle2:
+                total_idle_hours = metrics.get('total_idle_time_minutes', 0) / 60
+                st.metric("Total Idle Time", f"{total_idle_hours:.1f} jam")
+            with col_idle3:
+                avg_score = metrics.get('average_score', 0)
+                st.metric("Skor Rata-rata", f"{avg_score:.2f}")
         
         st.divider()
         
@@ -882,6 +980,75 @@ def render_reports_page():
             title="Jumlah Penugasan per Unit"
         )
         st.plotly_chart(fig_unit, use_container_width=True)
+
+        # Add Idle Time Analysis
+        if 'idle_times' in st.session_state.metrics:
+            st.subheader("Analisis Waktu Idle Unit")
+
+            idle_data = []
+            for unit_id, idle_minutes in st.session_state.metrics['idle_times'].items():
+                unit_row = st.session_state.units_df[st.session_state.units_df['unit_id'] == unit_id]
+                if not unit_row.empty:
+                    unit_name = unit_row.iloc[0]['name']
+                    idle_hours = idle_minutes / 60
+                    idle_data.append({
+                        'Unit': unit_name,
+                        'Unit ID': unit_id,
+                        'Idle Time (jam)': idle_hours,
+                        'Waktu Kerja (jam)': (st.session_state.params.max_working_hours_per_day * 60 - idle_minutes) / 60,
+                        'Status': unit_row.iloc[0]['status']
+                    })
+
+            if idle_data:
+                idle_df = pd.DataFrame(idle_data)
+
+                # Metric cards for idle time
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_idle = idle_df['Idle Time (jam)'].mean()
+                    st.metric("Rata-rata Idle Time", f"{avg_idle:.1f} jam")
+                with col2:
+                    min_idle = idle_df['Idle Time (jam)'].min()
+                    st.metric("Idle Time Minimum", f"{min_idle:.1f} jam")
+                with col3:
+                    max_idle = idle_df['Idle Time (jam)'].max()
+                    st.metric("Idle Time Maksimum", f"{max_idle:.1f} jam")
+
+                st.dataframe(
+                    idle_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Idle Time (jam)": st.column_config.NumberColumn("Idle Time (jam)", format="%.2f jam"),
+                        "Waktu Kerja (jam)": st.column_config.NumberColumn("Waktu Kerja (jam)", format="%.2f jam")
+                    }
+                )
+
+                fig_idle = px.bar(
+                    idle_df,
+                    x='Unit',
+                    y='Idle Time (jam)',
+                    color='Status',
+                    title="Waktu Idle per Unit",
+                    color_discrete_map={'Available': '#2ecc71', 'Maintenance': '#e74c3c'}
+                )
+                fig_idle.update_layout(xaxis_title="Unit", yaxis_title="Idle Time (jam)")
+                st.plotly_chart(fig_idle, use_container_width=True)
+
+                # Utilization vs Idle Time comparison
+                fig_util_idle = px.scatter(
+                    idle_df,
+                    x='Waktu Kerja (jam)',
+                    y='Idle Time (jam)',
+                    color='Status',
+                    title="Hubungan Waktu Kerja vs Idle Time",
+                    hover_data=['Unit', 'Unit ID']
+                )
+                fig_util_idle.update_layout(
+                    xaxis_title="Waktu Kerja (jam)",
+                    yaxis_title="Idle Time (jam)"
+                )
+                st.plotly_chart(fig_util_idle, use_container_width=True)
     
     with tab3:
         st.subheader("Analisis Performa Rute")
@@ -1018,26 +1185,66 @@ def render_settings_page():
     st.divider()
     
     st.subheader("Reset Data")
-    
+
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         if st.button("Reset Data Unit", type="secondary"):
-            st.session_state.units_df = get_sample_units()
-            st.success("Data unit berhasil direset!")
-            st.rerun()
-    
+            success, count = delete_all_units()
+            if success:
+                # Clear session state and refresh data
+                st.session_state.units_df = get_units_df()  # Refresh from DB
+                st.session_state.assignments = []  # Clear any cached assignments
+                st.session_state.unassigned = []   # Clear unassigned list
+                st.success(f"Data unit berhasil dihapus! Jumlah unit dihapus: {count}")
+                st.rerun()
+            else:
+                st.error("Gagal menghapus data unit.")
+
     with col2:
         if st.button("Reset Data Rute", type="secondary"):
-            st.session_state.routes_df = get_sample_routes()
-            st.success("Data rute berhasil direset!")
-            st.rerun()
-    
+            success, count = delete_all_routes()
+            if success:
+                # Clear session state and refresh data
+                st.session_state.routes_df = get_routes_df()  # Refresh from DB
+                st.session_state.assignments = []  # Clear any cached assignments
+                st.session_state.unassigned = []   # Clear unassigned list
+                st.success(f"Data rute berhasil dihapus! Jumlah rute dihapus: {count}")
+                st.rerun()
+            else:
+                st.error("Gagal menghapus data rute.")
+
     with col3:
         if st.button("Reset Data Jadwal", type="secondary"):
-            st.session_state.schedules_df = get_sample_schedules()
-            st.success("Data jadwal berhasil direset!")
+            success, count = delete_all_schedules()
+            if success:
+                # Clear session state and refresh data
+                st.session_state.schedules_df = get_schedules_df()  # Refresh from DB
+                st.session_state.assignments = []  # Clear any cached assignments
+                st.session_state.unassigned = []   # Clear unassigned list
+                st.success(f"Data jadwal berhasil dihapus! Jumlah jadwal dihapus: {count}")
+                st.rerun()
+            else:
+                st.error("Gagal menghapus data jadwal.")
+
+    st.divider()
+
+    st.subheader("Reset Semua Data")
+    if st.button("Hapus Semua Data", type="primary", help="Hapus semua data unit, rute, dan jadwal sekaligus"):
+        success, counts = delete_all_data()
+        if success:
+            # Clear all session state data
+            st.session_state.units_df = get_units_df()      # Refresh from DB (should be empty now)
+            st.session_state.routes_df = get_routes_df()    # Refresh from DB (should be empty now)
+            st.session_state.schedules_df = get_schedules_df()  # Refresh from DB (should be empty now)
+            st.session_state.assignments = []               # Clear assignments
+            st.session_state.unassigned = []                # Clear unassigned
+            st.session_state.metrics = {}                   # Clear metrics
+            st.session_state.last_optimization_date = None  # Clear last optimization date
+            st.success(f"Semua data berhasil dihapus! Unit: {counts['units']}, Rute: {counts['routes']}, Jadwal: {counts['schedules']}")
             st.rerun()
+        else:
+            st.error("Gagal menghapus semua data.")
 
 def render_monitoring_page():
     st.title("Monitoring & Alert")
@@ -1288,15 +1495,160 @@ def render_scenarios_page():
                 fig2 = px.bar(comparison_df, x='Nama', y='Biaya BBM', title="Perbandingan Biaya BBM")
                 st.plotly_chart(fig2, use_container_width=True)
 
+def render_idle_time_page():
+    st.title("Analisis Idle Time")
+    st.markdown("Analisis waktu idle/unit istirahat kendaraan untuk optimalisasi penggunaan armada")
+
+    if not st.session_state.assignments:
+        st.warning("Belum ada data penugasan. Jalankan optimasi terlebih dahulu untuk melihat analisis idle time.")
+        return
+
+    if 'idle_times' not in st.session_state.metrics:
+        st.warning("Data idle time belum tersedia. Jalankan optimasi kembali.")
+        return
+
+    # Summary metrics
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        avg_idle_minutes = st.session_state.metrics.get('average_idle_time_minutes', 0)
+        avg_idle_hours = avg_idle_minutes / 60
+        st.metric("Rata-rata Idle Time", f"{avg_idle_hours:.1f} jam")
+
+    with col2:
+        total_idle_minutes = st.session_state.metrics.get('total_idle_time_minutes', 0)
+        total_idle_hours = total_idle_minutes / 60
+        st.metric("Total Idle Time", f"{total_idle_hours:.1f} jam")
+
+    with col3:
+        units_used = st.session_state.metrics.get('units_used', 0)
+        st.metric("Unit Digunakan", units_used)
+
+    with col4:
+        units_available = st.session_state.metrics.get('units_available', 0)
+        st.metric("Unit Tersedia", units_available)
+
+    st.divider()
+
+    # Detailed idle time analysis
+    idle_data = []
+    for unit_id, idle_minutes in st.session_state.metrics['idle_times'].items():
+        unit_row = st.session_state.units_df[st.session_state.units_df['unit_id'] == unit_id]
+        if not unit_row.empty:
+            unit_name = unit_row.iloc[0]['name']
+            idle_hours = idle_minutes / 60
+            working_hours = (st.session_state.params.max_working_hours_per_day * 60 - idle_minutes) / 60
+            idle_data.append({
+                'Unit': unit_name,
+                'Unit ID': unit_id,
+                'Status': unit_row.iloc[0]['status'],
+                'Kapasitas': unit_row.iloc[0]['capacity'],
+                'Idle Time (jam)': idle_hours,
+                'Waktu Kerja (jam)': working_hours,
+                'Utilisasi (%)': (working_hours / st.session_state.params.max_working_hours_per_day) * 100
+            })
+
+    if idle_data:
+        idle_df = pd.DataFrame(idle_data)
+
+        # Sort by idle time to show units with most idle time first
+        idle_df = idle_df.sort_values(by='Idle Time (jam)', ascending=False)
+
+        st.subheader("Data Idle Time per Unit")
+        st.dataframe(
+            idle_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Idle Time (jam)": st.column_config.NumberColumn("Idle Time (jam)", format="%.2f jam"),
+                "Waktu Kerja (jam)": st.column_config.NumberColumn("Waktu Kerja (jam)", format="%.2f jam"),
+                "Utilisasi (%)": st.column_config.ProgressColumn(
+                    "Utilisasi (%)",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100
+                )
+            }
+        )
+
+        # Visualizations
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fig_idle = px.bar(
+                idle_df,
+                x='Unit',
+                y='Idle Time (jam)',
+                color='Status',
+                title="Waktu Idle per Unit",
+                color_discrete_map={'Available': '#2ecc71', 'Maintenance': '#e74c3c'}
+            )
+            fig_idle.update_layout(xaxis_title="Unit", yaxis_title="Idle Time (jam)")
+            st.plotly_chart(fig_idle, use_container_width=True)
+
+        with col2:
+            fig_util = px.bar(
+                idle_df,
+                x='Unit',
+                y='Utilisasi (%)',
+                color='Status',
+                title="Tingkat Utilisasi per Unit",
+                color_discrete_map={'Available': '#2ecc71', 'Maintenance': '#e74c3c'}
+            )
+            fig_util.update_layout(xaxis_title="Unit", yaxis_title="Utilisasi (%)")
+            st.plotly_chart(fig_util, use_container_width=True)
+
+        st.subheader("Distribusi Idle Time")
+        fig_dist = px.histogram(
+            idle_df,
+            x='Idle Time (jam)',
+            nbins=15,
+            title="Distribusi Waktu Idle Unit",
+            marginal="box"
+        )
+        fig_dist.update_layout(xaxis_title="Idle Time (jam)", yaxis_title="Jumlah Unit")
+        st.plotly_chart(fig_dist, use_container_width=True)
+
+        # Capacity vs Idle Time analysis
+        fig_capacity_idle = px.scatter(
+            idle_df,
+            x='Kapasitas',
+            y='Idle Time (jam)',
+            color='Status',
+            title="Hubungan Kapasitas vs Idle Time",
+            hover_data=['Unit', 'Unit ID']
+        )
+        fig_capacity_idle.update_layout(
+            xaxis_title="Kapasitas Unit",
+            yaxis_title="Idle Time (jam)"
+        )
+        st.plotly_chart(fig_capacity_idle, use_container_width=True)
+
+        # Recommendations based on idle time
+        st.subheader("Rekomendasi Berdasarkan Analisis Idle Time")
+
+        high_idle_units = idle_df[idle_df['Idle Time (jam)'] > idle_df['Idle Time (jam)'].quantile(0.75)]
+        low_idle_units = idle_df[idle_df['Idle Time (jam)'] < idle_df['Idle Time (jam)'].quantile(0.25)]
+
+        if not high_idle_units.empty:
+            st.info(f"Unit dengan idle time tinggi (>{idle_df['Idle Time (jam)'].quantile(0.75):.1f} jam): "
+                   f"{', '.join(high_idle_units['Unit'].tolist())}. "
+                   f"Pertimbangkan untuk memberikan penugasan tambahan pada unit ini.")
+
+        if not low_idle_units.empty:
+            st.info(f"Unit dengan idle time rendah (<{idle_df['Idle Time (jam)'].quantile(0.25):.1f} jam): "
+                   f"{', '.join(low_idle_units['Unit'].tolist())}. "
+                   f"Unit ini sudah optimal digunakan, pastikan waktu istirahat cukup.")
+
 def render_audit_page():
     st.title("Audit Trail")
     st.markdown("Riwayat perubahan dan aktivitas sistem")
-    
+
     tab1, tab2 = st.tabs(["Log Aktivitas", "Riwayat Penugasan"])
-    
+
     with tab1:
         st.subheader("Log Aktivitas Terbaru")
-        
+
         col1, col2 = st.columns([2, 1])
         with col1:
             entity_filter = st.selectbox(
@@ -1305,10 +1657,10 @@ def render_audit_page():
             )
         with col2:
             limit = st.number_input("Jumlah log:", min_value=10, max_value=500, value=100)
-        
+
         entity_type = None if entity_filter == "Semua" else entity_filter
         audit_logs = get_audit_logs(entity_type=entity_type, limit=limit)
-        
+
         if len(audit_logs) == 0:
             st.info("Belum ada log aktivitas.")
         else:
@@ -1324,32 +1676,32 @@ def render_audit_page():
                     "details": "Detail"
                 }
             )
-            
+
             output = BytesIO()
             audit_logs.to_excel(output, index=False, engine='openpyxl')
             output.seek(0)
-            
+
             st.download_button(
                 label="Download Audit Log (Excel)",
                 data=output,
                 file_name=f"audit_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-    
+
     with tab2:
         st.subheader("Riwayat Penugasan")
-        
+
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("Dari tanggal:", value=datetime.now().date() - timedelta(days=30))
         with col2:
             end_date = st.date_input("Sampai tanggal:", value=datetime.now().date())
-        
+
         start_datetime = datetime.combine(start_date, datetime.min.time())
         end_datetime = datetime.combine(end_date, datetime.max.time())
-        
+
         hist_assignments = get_historical_assignments(start_datetime, end_datetime)
-        
+
         if len(hist_assignments) == 0:
             st.info("Tidak ada riwayat penugasan dalam periode ini.")
         else:
@@ -1363,11 +1715,11 @@ def render_audit_page():
                     "fuel_cost": st.column_config.NumberColumn("Biaya BBM", format="Rp %,.0f")
                 }
             )
-            
+
             output = BytesIO()
             hist_assignments.to_excel(output, index=False, engine='openpyxl')
             output.seek(0)
-            
+
             st.download_button(
                 label="Download Riwayat Penugasan (Excel)",
                 data=output,
@@ -1396,6 +1748,8 @@ def main():
         render_scenarios_page()
     elif page == "Laporan & Analitik":
         render_reports_page()
+    elif page == "Analisis Idle Time":
+        render_idle_time_page()
     elif page == "Audit Trail":
         render_audit_page()
     elif page == "Pengaturan":

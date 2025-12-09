@@ -14,6 +14,7 @@ class Unit:
     operational_cost_per_km: float
     status: str
     home_location: str
+    last_location: str = field(default_factory=str)  # Added to track last location
     allowed_routes: List[str] = field(default_factory=list)
     
 @dataclass
@@ -41,33 +42,37 @@ class OperationalParameters:
     minimum_rest_time_minutes: int = 60
     fuel_price_per_liter: float = 12500.0
     max_working_hours_per_day: int = 12
+    travel_times: Dict[Tuple[str, str], int] = field(default_factory=lambda: {
+        ("Depok", "Baltos"): 60,
+        ("Baltos", "Depok"): 60
+    })
     
 def get_sample_units() -> pd.DataFrame:
     units_data = [
-        {"unit_id": "U001", "name": "Bus Alpha-01", "capacity": 45, "fuel_efficiency": 4.5, 
+        {"unit_id": "U001", "name": "Bus Alpha-01", "capacity": 45, "fuel_efficiency": 4.5,
          "operational_cost_per_km": 2500, "status": "Available", "home_location": "Terminal A",
-         "allowed_routes": ["R001", "R002", "R003"]},
-        {"unit_id": "U002", "name": "Bus Alpha-02", "capacity": 45, "fuel_efficiency": 4.2, 
+         "last_location": "Terminal A", "allowed_routes": ["R001", "R002", "R003"]},
+        {"unit_id": "U002", "name": "Bus Alpha-02", "capacity": 45, "fuel_efficiency": 4.2,
          "operational_cost_per_km": 2600, "status": "Available", "home_location": "Terminal A",
-         "allowed_routes": ["R001", "R002", "R004"]},
-        {"unit_id": "U003", "name": "Bus Beta-01", "capacity": 55, "fuel_efficiency": 3.8, 
+         "last_location": "Terminal A", "allowed_routes": ["R001", "R002", "R004"]},
+        {"unit_id": "U003", "name": "Bus Beta-01", "capacity": 55, "fuel_efficiency": 3.8,
          "operational_cost_per_km": 3000, "status": "Available", "home_location": "Terminal B",
-         "allowed_routes": ["R002", "R003", "R004", "R005"]},
-        {"unit_id": "U004", "name": "Bus Beta-02", "capacity": 55, "fuel_efficiency": 3.9, 
+         "last_location": "Terminal B", "allowed_routes": ["R002", "R003", "R004", "R005"]},
+        {"unit_id": "U004", "name": "Bus Beta-02", "capacity": 55, "fuel_efficiency": 3.9,
          "operational_cost_per_km": 2900, "status": "Available", "home_location": "Terminal B",
-         "allowed_routes": ["R001", "R003", "R005"]},
-        {"unit_id": "U005", "name": "Bus Gamma-01", "capacity": 35, "fuel_efficiency": 5.2, 
+         "last_location": "Terminal B", "allowed_routes": ["R001", "R003", "R005"]},
+        {"unit_id": "U005", "name": "Bus Gamma-01", "capacity": 35, "fuel_efficiency": 5.2,
          "operational_cost_per_km": 2200, "status": "Available", "home_location": "Terminal C",
-         "allowed_routes": ["R003", "R004", "R005"]},
-        {"unit_id": "U006", "name": "Bus Gamma-02", "capacity": 35, "fuel_efficiency": 5.0, 
+         "last_location": "Terminal C", "allowed_routes": ["R003", "R004", "R005"]},
+        {"unit_id": "U006", "name": "Bus Gamma-02", "capacity": 35, "fuel_efficiency": 5.0,
          "operational_cost_per_km": 2300, "status": "Maintenance", "home_location": "Terminal C",
-         "allowed_routes": ["R001", "R002", "R005"]},
-        {"unit_id": "U007", "name": "Bus Delta-01", "capacity": 50, "fuel_efficiency": 4.0, 
+         "last_location": "Terminal C", "allowed_routes": ["R001", "R002", "R005"]},
+        {"unit_id": "U007", "name": "Bus Delta-01", "capacity": 50, "fuel_efficiency": 4.0,
          "operational_cost_per_km": 2700, "status": "Available", "home_location": "Terminal A",
-         "allowed_routes": ["R001", "R002", "R003", "R004"]},
-        {"unit_id": "U008", "name": "Bus Delta-02", "capacity": 50, "fuel_efficiency": 4.1, 
+         "last_location": "Terminal A", "allowed_routes": ["R001", "R002", "R003", "R004"]},
+        {"unit_id": "U008", "name": "Bus Delta-02", "capacity": 50, "fuel_efficiency": 4.1,
          "operational_cost_per_km": 2650, "status": "Available", "home_location": "Terminal B",
-         "allowed_routes": ["R002", "R003", "R004", "R005"]},
+         "last_location": "Terminal B", "allowed_routes": ["R002", "R003", "R004", "R005"]},
     ]
     df = pd.DataFrame(units_data)
     df['allowed_routes'] = df['allowed_routes'].apply(lambda x: json.dumps(x) if isinstance(x, list) else x)

@@ -3,14 +3,26 @@ import json
 from datetime import datetime
 from sqlalchemy.orm import Session
 from database import (
-    get_db_session, Unit, Route, Schedule, Assignment, 
-    AuditLog, OptimizationRun, Alert, Scenario, log_audit, create_alert
+    get_db_session, Unit, Route, Schedule, Assignment,
+    AuditLog, OptimizationRun, Alert, Scenario, Storage, Location, log_audit, create_alert
 )
 from data_models import get_sample_units, get_sample_routes, get_sample_schedules
 
 def seed_initial_data():
     db = get_db_session()
     try:
+        if db.query(Location).count() == 0:
+            locations_data = [
+                {'location_id': 'L001', 'name': 'Terminal A', 'address': 'Jl. Sudirman No. 1', 'capacity': 50, 'type': 'terminal', 'status': 'active'},
+                {'location_id': 'L002', 'name': 'Terminal B', 'address': 'Jl. Thamrin No. 2', 'capacity': 60, 'type': 'terminal', 'status': 'active'},
+                {'location_id': 'L003', 'name': 'Terminal C', 'address': 'Jl. Gatot Subroto No. 3', 'capacity': 40, 'type': 'terminal', 'status': 'active'}
+            ]
+            for loc_data in locations_data:
+                location = Location(**loc_data)
+                db.add(location)
+            db.commit()
+            print("Seeded locations data")
+
         if db.query(Unit).count() == 0:
             units_df = get_sample_units()
             for _, row in units_df.iterrows():
@@ -27,7 +39,7 @@ def seed_initial_data():
                 db.add(unit)
             db.commit()
             print("Seeded units data")
-        
+
         if db.query(Route).count() == 0:
             routes_df = get_sample_routes()
             for _, row in routes_df.iterrows():
@@ -44,7 +56,7 @@ def seed_initial_data():
                 db.add(route)
             db.commit()
             print("Seeded routes data")
-        
+
         if db.query(Schedule).count() == 0:
             schedules_df = get_sample_schedules()
             for _, row in schedules_df.iterrows():
@@ -58,7 +70,7 @@ def seed_initial_data():
                 db.add(schedule)
             db.commit()
             print("Seeded schedules data")
-            
+
     except Exception as e:
         db.rollback()
         print(f"Error seeding data: {e}")
@@ -133,6 +145,8 @@ def get_schedules_df():
 def add_unit(unit_data: dict):
     db = get_db_session()
     try:
+
+
         unit = Unit(**unit_data)
         db.add(unit)
         db.commit()
@@ -178,6 +192,13 @@ def delete_unit(unit_id: str):
         unit = db.query(Unit).filter(Unit.unit_id == unit_id).first()
         if unit:
             old_values = {'unit_id': unit.unit_id, 'name': unit.name}
+            
+            # First delete all assignments associated with this unit
+            associated_assignments = db.query(Assignment).filter(Assignment.unit_id == unit_id).all()
+            for assignment in associated_assignments:
+                db.delete(assignment)
+            
+            # Then delete the unit
             db.delete(unit)
             db.commit()
             log_audit(db, 'DELETE', 'Unit', unit_id, old_values=old_values)
@@ -238,6 +259,13 @@ def delete_route(route_id: str):
         route = db.query(Route).filter(Route.route_id == route_id).first()
         if route:
             old_values = {'route_id': route.route_id, 'name': route.name}
+            
+            # First delete all schedules associated with this route
+            associated_schedules = db.query(Schedule).filter(Schedule.route_id == route_id).all()
+            for schedule in associated_schedules:
+                db.delete(schedule)
+            
+            # Then delete the route
             db.delete(route)
             db.commit()
             log_audit(db, 'DELETE', 'Route', route_id, old_values=old_values)
@@ -295,6 +323,13 @@ def delete_schedule(schedule_id: str):
         schedule = db.query(Schedule).filter(Schedule.schedule_id == schedule_id).first()
         if schedule:
             old_values = {'schedule_id': schedule.schedule_id, 'route_id': schedule.route_id}
+            
+            # First delete all assignments associated with this schedule
+            associated_assignments = db.query(Assignment).filter(Assignment.schedule_id == schedule_id).all()
+            for assignment in associated_assignments:
+                db.delete(assignment)
+            
+            # Then delete the schedule
             db.delete(schedule)
             db.commit()
             log_audit(db, 'DELETE', 'Schedule', schedule_id, old_values=old_values)
@@ -548,5 +583,345 @@ def check_thresholds(metrics: dict, thresholds: dict):
             alerts_created.append(alert)
         
         return len(alerts_created)
+    finally:
+        db.close()
+
+def get_storage_items():
+    db = get_db_session()
+    try:
+        items = db.query(Storage).order_by(Storage.created_at.desc()).all()
+        data = []
+        for item in items:
+            data.append({
+                'id': item.id,
+                'key': item.key,
+                'value': item.value,
+                'data_type': item.data_type,
+                'description': item.description,
+                'created_at': item.created_at,
+                'updated_at': item.updated_at
+            })
+        return pd.DataFrame(data) if data else pd.DataFrame()
+    finally:
+        db.close()
+
+def add_storage_item(key: str, value: str, data_type: str = "text", description: str = None):
+    db = get_db_session()
+    try:
+        item = Storage(
+            key=key,
+            value=value,
+            data_type=data_type,
+            description=description
+        )
+        db.add(item)
+        db.commit()
+        log_audit(db, 'CREATE', 'Storage', key, new_values={'value': value, 'data_type': data_type})
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error adding storage item: {e}")
+        return False
+    finally:
+        db.close()
+
+def update_storage_item(key: str, value: str = None, data_type: str = None, description: str = None):
+    db = get_db_session()
+    try:
+        item = db.query(Storage).filter(Storage.key == key).first()
+        if item:
+            old_values = {
+                'value': item.value,
+                'data_type': item.data_type,
+                'description': item.description
+            }
+            if value is not None:
+                item.value = value
+            if data_type is not None:
+                item.data_type = data_type
+            if description is not None:
+                item.description = description
+            db.commit()
+            new_values = {
+                'value': item.value,
+                'data_type': item.data_type,
+                'description': item.description
+            }
+            log_audit(db, 'UPDATE', 'Storage', key, old_values=old_values, new_values=new_values)
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating storage item: {e}")
+        return False
+    finally:
+        db.close()
+
+def delete_storage_item(key: str):
+    db = get_db_session()
+    try:
+        item = db.query(Storage).filter(Storage.key == key).first()
+        if item:
+            old_values = {'key': item.key, 'value': item.value}
+            db.delete(item)
+            db.commit()
+            log_audit(db, 'DELETE', 'Storage', key, old_values=old_values)
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting storage item: {e}")
+        return False
+    finally:
+        db.close()
+
+def get_storage_item(key: str):
+    db = get_db_session()
+    try:
+        item = db.query(Storage).filter(Storage.key == key).first()
+        if item:
+            return {
+                'id': item.id,
+                'key': item.key,
+                'value': item.value,
+                'data_type': item.data_type,
+                'description': item.description,
+                'created_at': item.created_at,
+                'updated_at': item.updated_at
+            }
+        return None
+    finally:
+        db.close()
+
+def get_locations_df():
+    db = get_db_session()
+    try:
+        locations = db.query(Location).order_by(Location.created_at.desc()).all()
+        if not locations:
+            return pd.DataFrame(columns=['location_id', 'name', 'address', 'capacity', 'type', 'status'])
+        data = []
+        for l in locations:
+            data.append({
+                'location_id': l.location_id,
+                'name': l.name,
+                'address': l.address,
+                'capacity': l.capacity,
+                'type': l.type,
+                'status': l.status
+            })
+        return pd.DataFrame(data)
+    finally:
+        db.close()
+
+def add_location(location_data: dict):
+    db = get_db_session()
+    try:
+        location = Location(**location_data)
+        db.add(location)
+        db.commit()
+        log_audit(db, 'CREATE', 'Location', location_data['location_id'], new_values=location_data)
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error adding location: {e}")
+        return False
+    finally:
+        db.close()
+
+def update_location(location_id: str, location_data: dict):
+    db = get_db_session()
+    try:
+        location = db.query(Location).filter(Location.location_id == location_id).first()
+        if location:
+            old_values = {
+                'name': location.name,
+                'address': location.address,
+                'capacity': location.capacity,
+                'type': location.type,
+                'status': location.status
+            }
+            for key, value in location_data.items():
+                setattr(location, key, value)
+            db.commit()
+            log_audit(db, 'UPDATE', 'Location', location_id, old_values=old_values, new_values=location_data)
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating location: {e}")
+        return False
+    finally:
+        db.close()
+
+def delete_location(location_id: str):
+    db = get_db_session()
+    try:
+        location = db.query(Location).filter(Location.location_id == location_id).first()
+        if location:
+            old_values = {'location_id': location.location_id, 'name': location.name}
+
+            # First delete all units associated with this location
+            associated_units = db.query(Unit).filter(Unit.home_location == location.name).all()
+            for unit in associated_units:
+                db.delete(unit)
+
+            # Then delete the location
+            db.delete(location)
+            db.commit()
+            log_audit(db, 'DELETE', 'Location', location_id, old_values=old_values)
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting location: {e}")
+        return False
+    finally:
+        db.close()
+
+def delete_all_units():
+    """
+    Delete all units from the database
+    """
+    db = get_db_session()
+    try:
+        # First delete all assignments associated with units
+        db.query(Assignment).delete()
+
+        # Then delete all units
+        units = db.query(Unit).all()
+        deleted_count = len(units)
+
+        for unit in units:
+            old_values = {'unit_id': unit.unit_id, 'name': unit.name}
+            log_audit(db, 'DELETE', 'Unit', unit.unit_id, old_values=old_values)
+
+        db.query(Unit).delete()
+        db.commit()
+
+        return True, deleted_count
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all units: {e}")
+        return False, 0
+    finally:
+        db.close()
+
+def delete_all_routes():
+    """
+    Delete all routes from the database
+    This also deletes associated schedules and assignments
+    """
+    db = get_db_session()
+    try:
+        # First delete all assignments associated with schedules that will be deleted
+        db.query(Assignment).delete()
+
+        # Then delete all schedules
+        db.query(Schedule).delete()
+
+        # Finally delete all routes
+        routes = db.query(Route).all()
+        deleted_count = len(routes)
+
+        for route in routes:
+            old_values = {'route_id': route.route_id, 'name': route.name}
+            log_audit(db, 'DELETE', 'Route', route.route_id, old_values=old_values)
+
+        db.query(Route).delete()
+        db.commit()
+
+        return True, deleted_count
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all routes: {e}")
+        return False, 0
+    finally:
+        db.close()
+
+def delete_all_schedules():
+    """
+    Delete all schedules from the database
+    This also deletes associated assignments
+    """
+    db = get_db_session()
+    try:
+        # First delete all assignments associated with schedules
+        db.query(Assignment).delete()
+
+        # Then delete all schedules
+        schedules = db.query(Schedule).all()
+        deleted_count = len(schedules)
+
+        for schedule in schedules:
+            old_values = {'schedule_id': schedule.schedule_id, 'route_id': schedule.route_id}
+            log_audit(db, 'DELETE', 'Schedule', schedule.schedule_id, old_values=old_values)
+
+        db.query(Schedule).delete()
+        db.commit()
+
+        return True, deleted_count
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all schedules: {e}")
+        return False, 0
+    finally:
+        db.close()
+
+def delete_all_assignments():
+    """
+    Delete all assignments from the database
+    """
+    db = get_db_session()
+    try:
+        assignments = db.query(Assignment).all()
+        deleted_count = len(assignments)
+
+        for assignment in assignments:
+            old_values = {
+                'assignment_date': str(assignment.assignment_date),
+                'schedule_id': assignment.schedule_id,
+                'unit_id': assignment.unit_id
+            }
+            log_audit(db, 'DELETE', 'Assignment', f"{assignment.assignment_date}_{assignment.schedule_id}_{assignment.unit_id}", old_values=old_values)
+
+        db.query(Assignment).delete()
+        db.commit()
+
+        return True, deleted_count
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all assignments: {e}")
+        return False, 0
+    finally:
+        db.close()
+
+def delete_all_data():
+    """
+    Delete all data from the database (units, routes, schedules, assignments)
+    """
+    db = get_db_session()
+    try:
+        # Delete assignments first to handle foreign key constraints
+        db.query(Assignment).delete()
+
+        # Then delete other entities
+        unit_count = db.query(Unit).count()
+        route_count = db.query(Route).count()
+        schedule_count = db.query(Schedule).count()
+
+        # Log the deletion
+        log_audit(db, 'DELETE', 'ALL_DATA', None, details="Deleting all units, routes, and schedules")
+
+        db.query(Unit).delete()
+        db.query(Route).delete()
+        db.query(Schedule).delete()
+
+        db.commit()
+
+        return True, {'units': unit_count, 'routes': route_count, 'schedules': schedule_count}
+    except Exception as e:
+        db.rollback()
+        print(f"Error deleting all data: {e}")
+        return False, {'units': 0, 'routes': 0, 'schedules': 0}
     finally:
         db.close()

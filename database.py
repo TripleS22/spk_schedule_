@@ -5,9 +5,20 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 import json
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./logistics.db")
 
-engine = create_engine(DATABASE_URL)
+# Enable foreign key constraints for SQLite
+if DATABASE_URL.startswith("sqlite"):
+    from sqlalchemy import event
+    engine = create_engine(DATABASE_URL)
+    
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+else:
+    engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -25,7 +36,7 @@ class Unit(Base):
     allowed_routes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     assignments = relationship("Assignment", back_populates="unit")
 
 class Route(Base):
@@ -147,7 +158,7 @@ class User(Base):
 
 class ApprovalRequest(Base):
     __tablename__ = "approval_requests"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     request_type = Column(String(50), nullable=False)
     entity_type = Column(String(50), nullable=False)
@@ -159,6 +170,32 @@ class ApprovalRequest(Base):
     reviewed_at = Column(DateTime)
     review_notes = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+class Storage(Base):
+    __tablename__ = "storage"
+
+    id = Column(Integer, primary_key=True, index=True)
+    key = Column(String(100), unique=True, index=True, nullable=False)
+    value = Column(Text)
+    data_type = Column(String(50), default="text")
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Location(Base):
+    __tablename__ = "locations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    location_id = Column(String(50), unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    address = Column(Text)
+    capacity = Column(Integer)
+    type = Column(String(50), default="terminal")
+    status = Column(String(50), default="active")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 
 def init_db():
     Base.metadata.create_all(bind=engine)
