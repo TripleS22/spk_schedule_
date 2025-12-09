@@ -188,13 +188,14 @@ Dimana:
 ## Fitur Utama Sistem
 
 1. **Manajemen Data**: Pengelolaan unit, rute, dan jadwal
-2. **Optimasi Penugasan**: Algoritma otomatis untuk penugasan optimal
-3. **Monitoring Real-time**: Pemantauan status dan kinerja operasional
-4. **Analisis dan Laporan**: Visualisasi dan metrik kinerja
-5. **Pengaturan Parameter**: Konfigurasi bobot dan parameter operasional
-6. **Audit Trail**: Riwayat perubahan dan aktivitas sistem
-7. **Analisis Waktu Idle Unit**: Perhitungan dan visualisasi waktu istirahat/idle kendaraan untuk optimalisasi penggunaan armada
-8. **Halaman Analisis Idle Time**: Tampilan khusus untuk menganalisis distribusi waktu idle unit, tingkat utilisasi, dan rekomendasi penugasan
+2. **Manajemen Lokasi**: Pengelolaan data lokasi terminal dan fasilitas lainnya
+3. **Optimasi Penugasan**: Algoritma otomatis untuk penugasan optimal
+4. **Monitoring Real-time**: Pemantauan status dan kinerja operasional
+5. **Analisis dan Laporan**: Visualisasi dan metrik kinerja
+6. **Pengaturan Parameter**: Konfigurasi bobot dan parameter operasional
+7. **Audit Trail**: Riwayat perubahan dan aktivitas sistem
+8. **Analisis Waktu Idle Unit**: Perhitungan dan visualisasi waktu istirahat/idle kendaraan untuk optimalisasi penggunaan armada
+9. **Halaman Analisis Idle Time**: Tampilan khusus untuk menganalisis distribusi waktu idle unit, tingkat utilisasi, dan rekomendasi penugasan
 
 ## Teknologi yang Digunakan
 

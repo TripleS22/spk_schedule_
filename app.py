@@ -22,7 +22,8 @@ from db_operations import (
     get_historical_assignments, get_optimization_history,
     get_audit_logs, get_alerts, resolve_alert,
     save_scenario, get_scenarios, check_thresholds, seed_initial_data,
-    delete_all_units, delete_all_routes, delete_all_schedules, delete_all_assignments, delete_all_data, reset_to_default_data
+    delete_all_units, delete_all_routes, delete_all_schedules, delete_all_assignments, delete_all_data, reset_to_default_data,
+    get_locations_df, add_location, update_location, delete_location
 )
 from database import init_db
 
@@ -71,7 +72,7 @@ def render_sidebar():
         
         page = st.radio(
             "Pilih Menu:",
-            ["Dashboard", "Data Unit", "Data Rute", "Data Jadwal",
+            ["Dashboard", "Data Unit", "Data Rute", "Data Jadwal", "Data Lokasi",
              "Optimasi Penugasan", "Monitoring & Alert", "Analisis Skenario",
              "Laporan & Analitik", "Analisis Idle Time", "Audit Trail", "Pengaturan"],
             label_visibility="collapsed"
@@ -265,7 +266,7 @@ def render_units_page():
                 new_efficiency = st.number_input("Efisiensi BBM (km/L)", min_value=1.0, max_value=10.0, value=4.0)
             
             with col2:
-                new_cost = st.number_input("Biaya Operasional/km", min_value=1000, max_value=10000, value=2500)
+                new_cost = st.number_input("Biaya Operasional/km", min_value=100, max_value=10000, value=2500)
                 new_status = st.selectbox("Status", ["Available", "Maintenance"])
                 new_location = st.selectbox("Lokasi Asal", ["Terminal A", "Terminal B", "Terminal C"])
                 new_routes = st.multiselect(
@@ -320,7 +321,7 @@ def render_units_page():
                         edit_efficiency = st.number_input("Efisiensi BBM (km/L)", min_value=1.0, max_value=10.0, value=float(unit_data['fuel_efficiency']))
                     
                     with col2:
-                        edit_cost = st.number_input("Biaya Operasional/km", min_value=1000, max_value=10000, value=int(unit_data['operational_cost_per_km']))
+                        edit_cost = st.number_input("Biaya Operasional/km", min_value=100, max_value=10000, value=int(unit_data['operational_cost_per_km']))
                         status_options = ["Available", "Maintenance"]
                         edit_status = st.selectbox("Status", status_options, index=status_options.index(unit_data['status']) if unit_data['status'] in status_options else 0)
                         location_options = ["Terminal A", "Terminal B", "Terminal C"]
@@ -421,7 +422,7 @@ def render_routes_page():
                 new_destination = st.text_input("Tujuan", placeholder="Pelabuhan")
             
             with col2:
-                new_distance = st.number_input("Jarak (km)", min_value=1.0, max_value=100.0, value=20.0)
+                new_distance = st.number_input("Jarak (km)", min_value=1.0, max_value=500.0, value=20.0)
                 new_time = st.number_input("Waktu Tempuh (menit)", min_value=10, max_value=180, value=40)
                 new_type = st.selectbox("Tipe Rute", ["Regular", "Express", "Inter-Terminal", "Tourism"])
                 new_req_capacity = st.number_input("Kapasitas Minimum", min_value=10, max_value=60, value=30)
@@ -473,7 +474,7 @@ def render_routes_page():
                         edit_destination = st.text_input("Tujuan", value=route_data['destination'])
                     
                     with col2:
-                        edit_distance = st.number_input("Jarak (km)", min_value=1.0, max_value=100.0, value=float(route_data['distance_km']))
+                        edit_distance = st.number_input("Jarak (km)", min_value=1.0, max_value=500.0, value=float(route_data['distance_km']))
                         edit_time = st.number_input("Waktu Tempuh (menit)", min_value=10, max_value=180, value=int(route_data['estimated_time_minutes']))
                         type_options = ["Regular", "Express", "Inter-Terminal", "Tourism"]
                         edit_type = st.selectbox("Tipe Rute", type_options, index=type_options.index(route_data['route_type']) if route_data['route_type'] in type_options else 0)
@@ -1659,6 +1660,144 @@ def render_idle_time_page():
                    f"{', '.join(low_idle_units['Unit'].tolist())}. "
                    f"Unit ini sudah optimal digunakan, pastikan waktu istirahat cukup.")
 
+def render_locations_page():
+    st.title("Data Lokasi")
+    st.markdown("Kelola data lokasi terminal dan tempat penting lainnya")
+
+    tab1, tab2, tab3 = st.tabs(["Daftar Lokasi", "Tambah Lokasi", "Edit/Hapus Lokasi"])
+
+    with tab1:
+        locations_df = get_locations_df()
+        st.dataframe(
+            locations_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "location_id": "ID Lokasi",
+                "name": "Nama Lokasi",
+                "address": "Alamat",
+                "capacity": st.column_config.NumberColumn("Kapasitas", format="%d unit"),
+                "type": "Tipe",
+                "status": "Status"
+            }
+        )
+
+        if not locations_df.empty:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                fig_type = px.pie(
+                    locations_df,
+                    values='capacity',
+                    names='type',
+                    title="Distribusi Kapasitas berdasarkan Tipe Lokasi"
+                )
+                st.plotly_chart(fig_type, use_container_width=True)
+
+            with col2:
+                fig_status = px.bar(
+                    locations_df,
+                    x='name',
+                    y='capacity',
+                    color='status',
+                    title="Kapasitas Lokasi berdasarkan Status",
+                    color_discrete_map={'active': '#2ecc71', 'inactive': '#95a5a6'}
+                )
+                fig_status.update_layout(xaxis_title="Lokasi", yaxis_title="Kapasitas")
+                st.plotly_chart(fig_status, use_container_width=True)
+
+    with tab2:
+        st.subheader("Tambah Lokasi Baru")
+
+        with st.form("add_location_form"):
+            col1, col2 = st.columns(2)
+
+            with col1:
+                new_location_id = st.text_input("ID Lokasi", placeholder="L004")
+                new_name = st.text_input("Nama Lokasi", placeholder="Terminal Timur")
+                new_address = st.text_area("Alamat", placeholder="Jl. Raya Bogor No. 100")
+
+            with col2:
+                new_capacity = st.number_input("Kapasitas", min_value=10, max_value=200, value=50)
+                new_type = st.selectbox("Tipe Lokasi", ["terminal", "depot", "maintenance", "parking"])
+                new_status = st.selectbox("Status", ["active", "inactive"])
+
+            if st.form_submit_button("Tambah Lokasi", type="primary"):
+                if new_location_id and new_name and new_address:
+                    location_data = {
+                        'location_id': new_location_id,
+                        'name': new_name,
+                        'address': new_address,
+                        'capacity': new_capacity,
+                        'type': new_type,
+                        'status': new_status
+                    }
+                    if add_location(location_data):
+                        st.success(f"Lokasi {new_name} berhasil ditambahkan!")
+                        st.rerun()
+                    else:
+                        st.error("Gagal menambahkan lokasi. ID mungkin sudah ada.")
+                else:
+                    st.error("Mohon lengkapi semua field yang diperlukan")
+
+    with tab3:
+        st.subheader("Edit atau Hapus Lokasi")
+
+        locations_df = get_locations_df()
+        if locations_df.empty:
+            st.info("Tidak ada data lokasi.")
+        else:
+            selected_location_id = st.selectbox(
+                "Pilih Lokasi untuk diedit/dihapus",
+                locations_df['location_id'].tolist(),
+                format_func=lambda x: f"{x} - {locations_df[locations_df['location_id']==x]['name'].values[0]}",
+                key="edit_location_select"
+            )
+
+            if selected_location_id:
+                location_idx = locations_df[locations_df['location_id'] == selected_location_id].index[0]
+                location_data = locations_df.loc[location_idx]
+
+                with st.form("edit_location_form"):
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        edit_name = st.text_input("Nama Lokasi", value=location_data['name'])
+                        edit_address = st.text_area("Alamat", value=location_data['address'])
+
+                    with col2:
+                        edit_capacity = st.number_input("Kapasitas", min_value=10, max_value=200, value=int(location_data['capacity']))
+                        type_options = ["terminal", "depot", "maintenance", "parking"]
+                        edit_type = st.selectbox("Tipe Lokasi", type_options, index=type_options.index(location_data['type']) if location_data['type'] in type_options else 0)
+                        status_options = ["active", "inactive"]
+                        edit_status = st.selectbox("Status", status_options, index=status_options.index(location_data['status']) if location_data['status'] in status_options else 0)
+
+                    if st.form_submit_button("Simpan Perubahan", type="primary"):
+                        update_data = {
+                            'name': edit_name,
+                            'address': edit_address,
+                            'capacity': edit_capacity,
+                            'type': edit_type,
+                            'status': edit_status
+                        }
+                        if update_location(selected_location_id, update_data):
+                            st.success(f"Lokasi {edit_name} berhasil diperbarui!")
+                            st.rerun()
+                        else:
+                            st.error("Gagal memperbarui lokasi.")
+
+                st.divider()
+
+                col_del1, col_del2 = st.columns([3, 1])
+                with col_del2:
+                    if st.button("Hapus Lokasi", type="secondary", use_container_width=True):
+                        if st.button("Konfirmasi Hapus", key="confirm_delete_location", type="secondary", use_container_width=True):
+                            if delete_location(selected_location_id):
+                                st.success(f"Lokasi {location_data['name']} berhasil dihapus!")
+                                st.rerun()
+                            else:
+                                st.error("Gagal menghapus lokasi.")
+
 def render_audit_page():
     st.title("Audit Trail")
     st.markdown("Riwayat perubahan dan aktivitas sistem")
@@ -1759,6 +1898,8 @@ def main():
         render_routes_page()
     elif page == "Data Jadwal":
         render_schedules_page()
+    elif page == "Data Lokasi":
+        render_locations_page()
     elif page == "Optimasi Penugasan":
         render_optimization_page()
     elif page == "Monitoring & Alert":
