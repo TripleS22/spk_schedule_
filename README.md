@@ -238,9 +238,19 @@ Sistem juga menghitung beberapa metrik terkait BBM:
 **Digunakan untuk**: Evaluasi performa sistem dan operasional
 **Cara perhitungan**:
 - Tingkat Cakupan: (Jumlah jadwal terlayani / Total jadwal) × 100%
-- Utilisasi Unit: (Jumlah unit digunakan / Jumlah unit tersedia) × 100%
+- Utilisasi Unit (Metrik Umum): (Jumlah unit digunakan / Jumlah unit tersedia) × 100%
 - Rata-rata Idle Time: (Total jam tidak digunakan / Jumlah unit) dalam jam
 - Total Biaya: Σ(Biaya BBM dan biaya operasional semua penugasan)
+
+### 8. Analisis Idle Time
+**Sumber**: Perhitungan otomatis berdasarkan waktu operasional dan waktu maksimum unit
+**Digunakan untuk**: Menganalisis efisiensi penggunaan armada dan mengidentifikasi unit yang tidak optimal
+**Cara perhitungan**:
+- Waktu Kerja Unit: Σ(Waktu tempuh rute + Waktu turnaround) untuk semua penugasan per unit
+- Waktu Idle Unit: Waktu maksimum kerja per hari - Waktu kerja unit
+- Utilisasi Unit (per Unit): (Waktu kerja unit / Waktu maksimum kerja per hari) × 100%
+- Rata-rata Idle Time: Σ(Waktu idle semua unit) / Jumlah total unit
+- Utilisasi Rata-rata: Rata-rata utilisasi dari semua unit dalam armada
 
 ## Arsitektur Sistem
 

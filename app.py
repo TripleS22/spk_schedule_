@@ -1734,11 +1734,24 @@ def render_idle_time_page():
             st.info(f"Unit dengan idle time tinggi (>{idle_df['Idle Time (jam)'].quantile(0.75):.1f} jam): "
                    f"{', '.join(high_idle_units['Unit'].tolist())}. "
                    f"Pertimbangkan untuk memberikan penugasan tambahan pada unit ini.")
+        else:
+            st.info("Tidak ada unit dengan idle time yang tergolong tinggi. Pemanfaatan armada sudah merata.")
 
         if not low_idle_units.empty:
             st.info(f"Unit dengan idle time rendah (<{idle_df['Idle Time (jam)'].quantile(0.25):.1f} jam): "
                    f"{', '.join(low_idle_units['Unit'].tolist())}. "
                    f"Unit ini sudah optimal digunakan, pastikan waktu istirahat cukup.")
+        else:
+            st.info("Tidak ada unit dengan idle time yang tergolong rendah. Beberapa unit mungkin memerlukan penjadwalan yang lebih optimal.")
+
+        # Additional overall recommendations
+        avg_utilization = idle_df['Utilisasi (%)'].mean()
+        if avg_utilization < 50:
+            st.warning(f"Rata-rata utilisasi armada hanya {avg_utilization:.1f}%, pertimbangkan untuk meningkatkan penugasan.")
+        elif avg_utilization > 80:
+            st.success(f"Rata-rata utilisasi armada sebesar {avg_utilization:.1f}% sudah optimal.")
+        else:
+            st.info(f"Rata-rata utilisasi armada sebesar {avg_utilization:.1f}% berada dalam rentang yang wajar.")
 
 def render_locations_page():
     st.title("Data Lokasi")
