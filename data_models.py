@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, time, timedelta
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import json
 
 @dataclass
