@@ -11,7 +11,14 @@ from data_models import get_sample_units, get_sample_routes, get_sample_schedule
 def seed_initial_data():
     db = get_db_session()
     try:
-        if db.query(Location).count() == 0:
+        # Check if data has already been initialized before
+        initialization_check = db.query(SystemState).filter(SystemState.key == 'data_initialized').first()
+
+        # Only initialize if initialization has never happened before
+        if initialization_check is None:
+            print("Initializing database with default data...")
+
+            # Add locations
             locations_data = [
                 {'location_id': 'L001', 'name': 'Terminal A', 'address': 'Jl. Sudirman No. 1', 'capacity': 50, 'type': 'terminal', 'status': 'active'},
                 {'location_id': 'L002', 'name': 'Terminal B', 'address': 'Jl. Thamrin No. 2', 'capacity': 60, 'type': 'terminal', 'status': 'active'},
@@ -20,10 +27,8 @@ def seed_initial_data():
             for loc_data in locations_data:
                 location = Location(**loc_data)
                 db.add(location)
-            db.commit()
-            print("Seeded locations data")
 
-        if db.query(Unit).count() == 0:
+            # Add units
             units_df = get_sample_units()
             for _, row in units_df.iterrows():
                 unit = Unit(
@@ -37,10 +42,8 @@ def seed_initial_data():
                     allowed_routes=row['allowed_routes']
                 )
                 db.add(unit)
-            db.commit()
-            print("Seeded units data")
 
-        if db.query(Route).count() == 0:
+            # Add routes
             routes_df = get_sample_routes()
             for _, row in routes_df.iterrows():
                 route = Route(
@@ -54,10 +57,8 @@ def seed_initial_data():
                     required_capacity=row['required_capacity']
                 )
                 db.add(route)
-            db.commit()
-            print("Seeded routes data")
 
-        if db.query(Schedule).count() == 0:
+            # Add schedules
             schedules_df = get_sample_schedules()
             for _, row in schedules_df.iterrows():
                 schedule = Schedule(
@@ -68,12 +69,109 @@ def seed_initial_data():
                     priority=row['priority']
                 )
                 db.add(schedule)
+
+            # Mark that data has been initialized
+            initialization_marker = SystemState(
+                key='data_initialized',
+                value='true'
+            )
+            db.add(initialization_marker)
+
             db.commit()
-            print("Seeded schedules data")
+            print("Database initialized with default data successfully.")
+        else:
+            print("Database already initialized. Skipping default data seeding.")
 
     except Exception as e:
         db.rollback()
         print(f"Error seeding data: {e}")
+    finally:
+        db.close()
+
+def reset_to_default_data():
+    """
+    Reset all data to default sample data
+    """
+    db = get_db_session()
+    try:
+        # First delete all existing data (except SystemState)
+        db.query(Assignment).delete()
+        db.query(Schedule).delete()
+        db.query(Route).delete()
+        db.query(Unit).delete()
+        db.query(Location).delete()
+
+        # Add locations
+        locations_data = [
+            {'location_id': 'L001', 'name': 'Terminal A', 'address': 'Jl. Sudirman No. 1', 'capacity': 50, 'type': 'terminal', 'status': 'active'},
+            {'location_id': 'L002', 'name': 'Terminal B', 'address': 'Jl. Thamrin No. 2', 'capacity': 60, 'type': 'terminal', 'status': 'active'},
+            {'location_id': 'L003', 'name': 'Terminal C', 'address': 'Jl. Gatot Subroto No. 3', 'capacity': 40, 'type': 'terminal', 'status': 'active'}
+        ]
+        for loc_data in locations_data:
+            location = Location(**loc_data)
+            db.add(location)
+
+        # Add units
+        units_df = get_sample_units()
+        for _, row in units_df.iterrows():
+            unit = Unit(
+                unit_id=row['unit_id'],
+                name=row['name'],
+                capacity=row['capacity'],
+                fuel_efficiency=row['fuel_efficiency'],
+                operational_cost_per_km=row['operational_cost_per_km'],
+                status=row['status'],
+                home_location=row['home_location'],
+                allowed_routes=row['allowed_routes']
+            )
+            db.add(unit)
+
+        # Add routes
+        routes_df = get_sample_routes()
+        for _, row in routes_df.iterrows():
+            route = Route(
+                route_id=row['route_id'],
+                name=row['name'],
+                origin=row['origin'],
+                destination=row['destination'],
+                distance_km=row['distance_km'],
+                estimated_time_minutes=row['estimated_time_minutes'],
+                route_type=row['route_type'],
+                required_capacity=row['required_capacity']
+            )
+            db.add(route)
+
+        # Add schedules
+        schedules_df = get_sample_schedules()
+        for _, row in schedules_df.iterrows():
+            schedule = Schedule(
+                schedule_id=row['schedule_id'],
+                route_id=row['route_id'],
+                departure_time=row['departure_time'],
+                operating_days=row['operating_days'],
+                priority=row['priority']
+            )
+            db.add(schedule)
+
+        # Update the initialization marker
+        initialization_check = db.query(SystemState).filter(SystemState.key == 'data_initialized').first()
+        if initialization_check:
+            initialization_check.value = 'true'
+            initialization_check.updated_at = datetime.utcnow()
+        else:
+            initialization_marker = SystemState(
+                key='data_initialized',
+                value='true'
+            )
+            db.add(initialization_marker)
+
+        db.commit()
+        print("Database reset to default data successfully.")
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"Error resetting to default data: {e}")
+        return False
     finally:
         db.close()
 

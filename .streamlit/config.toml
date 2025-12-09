@@ -1,4 +1,10 @@
 [server]
 headless = true
-address = "0.0.0.0"
-port = 5000
+
+# Streamlit Cloud automatically sets the correct port,
+# so we only set a fallback value for local environment.
+port = 8501
+
+# This enables full screen use in cloud environments
+enableCORS = false
+enableXsrfProtection = false

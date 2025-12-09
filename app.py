@@ -22,7 +22,7 @@ from db_operations import (
     get_historical_assignments, get_optimization_history,
     get_audit_logs, get_alerts, resolve_alert,
     save_scenario, get_scenarios, check_thresholds, seed_initial_data,
-    delete_all_units, delete_all_routes, delete_all_schedules, delete_all_assignments, delete_all_data
+    delete_all_units, delete_all_routes, delete_all_schedules, delete_all_assignments, delete_all_data, reset_to_default_data
 )
 from database import init_db
 
@@ -1230,7 +1230,7 @@ def render_settings_page():
     st.divider()
 
     st.subheader("Reset Semua Data")
-    if st.button("Hapus Semua Data", type="primary", help="Hapus semua data unit, rute, dan jadwal sekaligus"):
+    if st.button("Hapus Semua Data", type="secondary", help="Hapus semua data unit, rute, dan jadwal sekaligus"):
         success, counts = delete_all_data()
         if success:
             # Clear all session state data
@@ -1245,6 +1245,25 @@ def render_settings_page():
             st.rerun()
         else:
             st.error("Gagal menghapus semua data.")
+
+    st.divider()
+
+    st.subheader("Reset ke Data Default")
+    if st.button("Reset ke Data Default", type="primary", help="Reset semua data ke data sample awal"):
+        success = reset_to_default_data()
+        if success:
+            # Clear all session state data and refresh from DB
+            st.session_state.units_df = get_units_df()
+            st.session_state.routes_df = get_routes_df()
+            st.session_state.schedules_df = get_schedules_df()
+            st.session_state.assignments = []
+            st.session_state.unassigned = []
+            st.session_state.metrics = {}
+            st.session_state.last_optimization_date = None
+            st.success("Semua data berhasil direset ke data default!")
+            st.rerun()
+        else:
+            st.error("Gagal mereset data ke default.")
 
 def render_monitoring_page():
     st.title("Monitoring & Alert")
