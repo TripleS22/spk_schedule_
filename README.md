@@ -183,6 +183,65 @@ Sistem juga menghitung beberapa metrik terkait BBM:
 - Biaya BBM per penugasan: Rata-rata biaya BBM per penugasan
 - Biaya BBM per km: Efisiensi biaya BBM per kilometer
 
+## Sumber dan Perhitungan Data
+
+### 1. Data Unit
+**Sumber**: Input manual melalui halaman "Data Unit" atau data sample awal
+**Digunakan untuk**: Menyimpan informasi kendaraan/armada
+**Cara perhitungan**:
+- ID Unit, Nama, Kapasitas: Input langsung oleh pengguna
+- Efisiensi BBM (km/L): Input langsung, menentukan berapa km bisa ditempuh per liter BBM
+- Biaya Operasional/km: Input langsung, biaya non-BBM per kilometer
+
+### 2. Data Rute
+**Sumber**: Input manual melalui halaman "Data Rute" atau data sample awal
+**Digunakan untuk**: Menyimpan informasi trayek perjalanan
+**Cara perhitungan**:
+- Jarak (km): Input langsung, panjang rute satu arah dalam kilometer
+- Waktu Tempuh (menit): Input langsung, waktu tempuh rute satu arah
+- Kapasitas Minimum: Input langsung, kapasitas kendaraan minimum yang bisa digunakan
+
+### 3. Data Jadwal
+**Sumber**: Input manual melalui halaman "Data Jadwal" atau data sample awal
+**Digunakan untuk**: Menyimpan informasi waktu keberangkatan
+**Cara perhitungan**:
+- Jadwal: Gabungan dari rute dan waktu keberangkatan
+- Prioritas: Menentukan urutan penugasan (1 = tertinggi, 3 = terendah)
+
+### 4. Data Lokasi
+**Sumber**: Input manual melalui halaman "Data Lokasi"
+**Digunakan untuk**: Menyimpan informasi terminal dan tempat penting
+**Cara perhitungan**:
+- Kapasitas: Jumlah unit maksimum yang bisa ditampung
+- Tipe: Klasifikasi lokasi (terminal, depot, dll)
+
+### 5. Biaya BBM (Bahan Bakar Minyak)
+**Sumber**: Parameter sistem (`fuel_price_per_liter`) dan efisiensi unit
+**Digunakan untuk**: Menghitung biaya bahan bakar untuk setiap penugasan
+**Cara perhitungan**:
+- BBM per jam = Jarak rute / Efisiensi BBM unit
+- Biaya BBM = (BBM per jam) × Harga BBM per liter
+- Total Biaya BBM = Σ(Biaya BBM setiap penugasan)
+
+### 6. Skor Penugasan
+**Sumber**: Algoritma penilaian otomatis berbasis parameter
+**Digunakan untuk**: Menentukan kecocokan antara unit dan jadwal
+**Cara perhitungan**:
+- Skor Kapasitas: Menilai kecocokan kapasitas unit dengan kebutuhan rute
+- Skor Jarak: Menilai kecocokan lokasi awal unit dengan rute
+- Skor Ketersediaan: Menilai status unit (Available/Maintenance)
+- Skor Biaya: Menilai efisiensi biaya operasional
+- Skor Total: Gabungan berbobot dari semua skor di atas
+
+### 7. Metrik Kinerja
+**Sumber**: Perhitungan otomatis berdasarkan hasil optimasi
+**Digunakan untuk**: Evaluasi performa sistem dan operasional
+**Cara perhitungan**:
+- Tingkat Cakupan: (Jumlah jadwal terlayani / Total jadwal) × 100%
+- Utilisasi Unit: (Jumlah unit digunakan / Jumlah unit tersedia) × 100%
+- Rata-rata Idle Time: (Total jam tidak digunakan / Jumlah unit) dalam jam
+- Total Biaya: Σ(Biaya BBM dan biaya operasional semua penugasan)
+
 ## Arsitektur Sistem
 
 ### Komponen Utama:
