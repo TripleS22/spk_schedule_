@@ -1735,7 +1735,7 @@ def render_locations_page():
 
             with col2:
                 new_capacity = st.number_input("Kapasitas", min_value=10, max_value=200, value=50)
-                new_type = st.selectbox("Tipe Lokasi", ["terminal", "depot", "maintenance", "parking"])
+                new_type = st.selectbox("Tipe Lokasi", ["bigpoll", "mediumpoll", "smallpoll", "agen"])
                 new_status = st.selectbox("Status", ["active", "inactive"])
 
             if st.form_submit_button("Tambah Lokasi", type="primary"):
@@ -1786,7 +1786,7 @@ def render_locations_page():
 
                     with col2:
                         edit_capacity = st.number_input("Kapasitas", min_value=10, max_value=200, value=int(location_data['capacity']))
-                        type_options = ["terminal", "depot", "maintenance", "parking"]
+                        type_options = ["bigpoll", "mediumpoll", "smallpoll", "agen"]
                         edit_type = st.selectbox("Tipe Lokasi", type_options, index=type_options.index(location_data['type']) if location_data['type'] in type_options else 0)
                         status_options = ["active", "inactive"]
                         edit_status = st.selectbox("Status", status_options, index=status_options.index(location_data['status']) if location_data['status'] in status_options else 0)
