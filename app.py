@@ -1774,6 +1774,9 @@ def render_locations_page():
                 location_idx = locations_df[locations_df['location_id'] == selected_location_id].index[0]
                 location_data = locations_df.loc[location_idx]
 
+                # Get associated units
+                associated_units = st.session_state.units_df[st.session_state.units_df['home_location'] == location_data['name']]
+
                 with st.form("edit_location_form"):
                     col1, col2 = st.columns(2)
 
@@ -1802,17 +1805,43 @@ def render_locations_page():
                         else:
                             st.error("Gagal memperbarui lokasi.")
 
+                # Show associated units
+                if not associated_units.empty:
+                    st.subheader("Unit Terkait")
+                    st.info(f"Lokasi ini digunakan oleh {len(associated_units)} unit:")
+                    st.dataframe(
+                        associated_units[['unit_id', 'name', 'status']].rename(columns={
+                            'unit_id': 'ID Unit',
+                            'name': 'Nama Unit',
+                            'status': 'Status'
+                        }),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
                 st.divider()
+
+                # Check if location has associated units
+                locations_df = get_locations_df()
+                current_location_name = locations_df[locations_df['location_id'] == selected_location_id]['name'].iloc[0] if not locations_df.empty else ""
+
+                # Get associated units
+                associated_units_count = len(st.session_state.units_df[st.session_state.units_df['home_location'] == current_location_name])
 
                 col_del1, col_del2 = st.columns([3, 1])
                 with col_del2:
-                    if st.button("Hapus Lokasi", type="secondary", use_container_width=True):
-                        if st.button("Konfirmasi Hapus", key="confirm_delete_location", type="secondary", use_container_width=True):
-                            if delete_location(selected_location_id):
-                                st.success(f"Lokasi {location_data['name']} berhasil dihapus!")
-                                st.rerun()
-                            else:
-                                st.error("Gagal menghapus lokasi.")
+                    if associated_units_count > 0:
+                        st.warning(f"Lokasi ini digunakan oleh {associated_units_count} unit")
+                        st.button("Hapus Lokasi", type="secondary", use_container_width=True, disabled=True)
+                        st.info("Untuk menghapus lokasi, pindahkan dulu unit yang terkait ke lokasi lain")
+                    else:
+                        if st.button("Hapus Lokasi", type="secondary", use_container_width=True):
+                            if st.button("Konfirmasi Hapus", key="confirm_delete_location", type="secondary", use_container_width=True):
+                                if delete_location(selected_location_id):
+                                    st.success(f"Lokasi {location_data['name']} berhasil dihapus!")
+                                    st.rerun()
+                                else:
+                                    st.error("Gagal menghapus lokasi.")
 
 def render_audit_page():
     st.title("Audit Trail")
