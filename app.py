@@ -150,6 +150,37 @@ def render_dashboard():
             st.metric("Skor Rata-rata", f"{avg_score:.2f}")
         else:
             st.metric("Skor Rata-rata", "Belum dihitung")
+
+    # Add fuel metrics row
+    col9, col10, col11, col12 = st.columns(4)
+
+    with col9:
+        if st.session_state.metrics:
+            total_fuel_cost = st.session_state.metrics.get('total_fuel_cost', 0)
+            st.metric("Total Biaya BBM", f"Rp {total_fuel_cost:,.0f}")
+        else:
+            st.metric("Total Biaya BBM", "Belum dihitung")
+
+    with col10:
+        if st.session_state.metrics:
+            total_fuel_liters = st.session_state.metrics.get('total_fuel_liters', 0)
+            st.metric("Total BBM", f"{total_fuel_liters:.1f} L")
+        else:
+            st.metric("Total BBM", "Belum dihitung")
+
+    with col11:
+        if st.session_state.metrics:
+            avg_fuel_per_assignment = st.session_state.metrics.get('avg_fuel_per_assignment', 0)
+            st.metric("Rata-rata BBM/penugasan", f"{avg_fuel_per_assignment:.1f} L")
+        else:
+            st.metric("Rata-rata BBM/penugasan", "Belum dihitung")
+
+    with col12:
+        if st.session_state.metrics:
+            avg_fuel_cost_per_km = st.session_state.metrics.get('avg_fuel_cost_per_km', 0)
+            st.metric("Biaya BBM/km", f"Rp {avg_fuel_cost_per_km:.0f}")
+        else:
+            st.metric("Biaya BBM/km", "Belum dihitung")
     
     st.divider()
     
@@ -777,6 +808,21 @@ def render_optimization_page():
             st.metric("Total Idle Time", f"{total_idle_hours:.1f} jam")
         with col8:
             st.metric("Unit Tersedia", st.session_state.metrics.get('units_available', 0))
+
+        # Additional fuel metrics
+        col9, col10, col11, col12 = st.columns(4)
+        with col9:
+            total_fuel_cost = st.session_state.metrics.get('total_fuel_cost', 0)
+            st.metric("Total Biaya BBM", f"Rp {total_fuel_cost:,.0f}")
+        with col10:
+            total_fuel_liters = st.session_state.metrics.get('total_fuel_liters', 0)
+            st.metric("Total BBM", f"{total_fuel_liters:.1f} L")
+        with col11:
+            avg_fuel_per_assignment = st.session_state.metrics.get('avg_fuel_per_assignment', 0)
+            st.metric("Rata-rata BBM/penugasan", f"{avg_fuel_per_assignment:.1f} L")
+        with col12:
+            avg_fuel_cost_per_km = st.session_state.metrics.get('avg_fuel_cost_per_km', 0)
+            st.metric("Biaya BBM/km", f"Rp {avg_fuel_cost_per_km:.0f}")
         
         st.subheader("Detail Penugasan")
         
@@ -934,6 +980,24 @@ def render_reports_page():
             with col_idle3:
                 avg_score = metrics.get('average_score', 0)
                 st.metric("Skor Rata-rata", f"{avg_score:.2f}")
+
+        # Add fuel metrics if available
+        if 'total_fuel_cost' in metrics:
+            st.divider()
+            st.subheader("Metric Bahan Bakar")
+            col_fuel1, col_fuel2, col_fuel3, col_fuel4 = st.columns(4)
+            with col_fuel1:
+                total_fuel_cost = metrics.get('total_fuel_cost', 0)
+                st.metric("Total Biaya BBM", f"Rp {total_fuel_cost:,.0f}")
+            with col_fuel2:
+                total_fuel_liters = metrics.get('total_fuel_liters', 0)
+                st.metric("Total BBM", f"{total_fuel_liters:.1f} L")
+            with col_fuel3:
+                avg_fuel_per_assignment = metrics.get('avg_fuel_per_assignment', 0)
+                st.metric("Rata-rata BBM/penugasan", f"{avg_fuel_per_assignment:.1f} L")
+            with col_fuel4:
+                avg_fuel_cost_per_km = metrics.get('avg_fuel_cost_per_km', 0)
+                st.metric("Biaya BBM/km", f"Rp {avg_fuel_cost_per_km:.0f}")
         
         st.divider()
         

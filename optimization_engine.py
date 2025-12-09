@@ -48,8 +48,19 @@ class OptimizationEngine:
         return (route_time_minutes ) + self.params.turnaround_time_minutes
     
     def calculate_fuel_cost(self, distance_km: float, fuel_efficiency: float) -> float:
-        fuel_needed = distance_km * 2 / fuel_efficiency
-        return fuel_needed * self.params.fuel_price_per_liter
+        """
+        Calculate fuel cost for a route assignment
+        Based on one-way distance only (single trip)
+        distance_km: one-way distance in kilometers
+        fuel_efficiency: km per liter
+        """
+        # Calculate fuel needed in liters for one-way trip
+        fuel_needed = distance_km / fuel_efficiency
+
+        # Calculate fuel cost in rupiah
+        fuel_cost = fuel_needed * self.params.fuel_price_per_liter
+
+        return fuel_cost
     
     def calculate_capacity_score(self, unit_capacity: int, required_capacity: int) -> float:
         if unit_capacity < required_capacity:
@@ -308,7 +319,7 @@ class OptimizationEngine:
         fuel_cost = self.calculate_fuel_cost(
             route_row['distance_km'], unit_row['fuel_efficiency']
         )
-        operational_cost = unit_row['operational_cost_per_km'] * route_row['distance_km'] * 2
+        operational_cost = unit_row['operational_cost_per_km'] * route_row['distance_km']
 
         cost_score = self.calculate_cost_score(
             operational_cost, fuel_cost,
@@ -377,7 +388,7 @@ class OptimizationEngine:
         fuel_cost = self.calculate_fuel_cost(
             route_row['distance_km'], unit_row['fuel_efficiency']
         )
-        operational_cost = unit_row['operational_cost_per_km'] * route_row['distance_km'] * 2
+        operational_cost = unit_row['operational_cost_per_km'] * route_row['distance_km']
 
         cost_score = self.calculate_cost_score(
             operational_cost, fuel_cost,
@@ -427,8 +438,8 @@ class OptimizationEngine:
         unassigned = []
 
         avg_costs = {
-            'operational': units_df['operational_cost_per_km'].mean() * routes_df['distance_km'].mean() * 2,
-            'fuel': (routes_df['distance_km'].mean() * 2 / units_df['fuel_efficiency'].mean()) * self.params.fuel_price_per_liter
+            'operational': units_df['operational_cost_per_km'].mean() * routes_df['distance_km'].mean(),
+            'fuel': (routes_df['distance_km'].mean() / units_df['fuel_efficiency'].mean()) * self.params.fuel_price_per_liter
         }
 
         target_day = get_day_name(target_date)
@@ -582,7 +593,7 @@ class OptimizationEngine:
         total_distance = 0
         for a in assignments:
             route = routes_df[routes_df['route_id'] == a.route_id].iloc[0]
-            total_distance += route['distance_km'] * 2
+            total_distance += route['distance_km']
 
         avg_score = np.mean([a.total_score for a in assignments]) if assignments else 0
 
@@ -615,12 +626,35 @@ class OptimizationEngine:
         total_available_units = len(units_df[units_df['status'] == 'Available'])
         avg_idle_time = total_idle_time / total_available_units if total_available_units > 0 else 0
 
+        # Calculate detailed fuel metrics
+        total_fuel_liters = 0  # Total fuel in liters
+        assignment_fuel_costs = []  # Individual assignment fuel costs for analysis
+
+        for a in assignments:
+            route = routes_df[routes_df['route_id'] == a.route_id].iloc[0]
+            unit = units_df[units_df['unit_id'] == a.unit_id].iloc[0]
+
+            # Calculate fuel consumption for this assignment (one-way only)
+            one_way_distance = route['distance_km']  # One-way distance
+            fuel_needed = one_way_distance / unit['fuel_efficiency']  # Liters needed
+            total_fuel_liters += fuel_needed
+            assignment_fuel_costs.append(a.fuel_cost)
+
+        # Additional fuel metrics
+        avg_fuel_cost_per_assignment = np.mean(assignment_fuel_costs) if assignment_fuel_costs else 0
+        avg_fuel_per_assignment = total_fuel_liters / len(assignments) if assignments else 0
+        avg_fuel_cost_per_km = total_fuel_cost / total_distance if total_distance > 0 else 0
+
         return {
             'total_schedules': total_schedules,
             'assigned_count': assigned_count,
             'coverage_rate': coverage_rate,
             'utilization_rate': utilization_rate,
             'total_fuel_cost': total_fuel_cost,
+            'total_fuel_liters': total_fuel_liters,
+            'avg_fuel_cost_per_assignment': avg_fuel_cost_per_assignment,
+            'avg_fuel_per_assignment': avg_fuel_per_assignment,
+            'avg_fuel_cost_per_km': avg_fuel_cost_per_km,
             'total_distance': total_distance,
             'average_score': avg_score,
             'units_used': len(assigned_units),

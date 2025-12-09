@@ -147,10 +147,16 @@ d. waktu_berangkat + waktu_tempuh + waktu_turnaround ≤ batas_waktu
 Waktu_kembali = Waktu_berangkat + Waktu_tempuh_rute + Waktu_turnaround
 ```
 
-### 4. Model Biaya
+### 4. Model Biaya BBM (Bahan Bakar Minyak)
 ```
-Biaya_BBM = (Jarak_rute × Biaya_per_km × Efisiensi_bbm) × Jumlah_penumpang
+BBM_digunakan_per_jam = Jarak_rute / Efisiensi_BBM_unit
+Biaya_BBM = BBM_digunakan_per_jam × Harga_BBM_per_liter
 ```
+
+Dimana:
+- Jarak_rute = jarak satu arah dari data rute (dalam km)
+- Efisiensi_BBM_unit = efisiensi bahan bakar unit (dalam km/L)
+- Harga_BBM_per_liter = parameter harga BBM per liter (dalam Rupiah)
 
 ### 5. Perhitungan Waktu Idle/Rest Unit
 ```
@@ -170,6 +176,12 @@ Total_Idle_Time = (Jumlah_unit × Jam_kerja_maksimum) - Σ(Waktu_beroperasi_per_
 
 Dimana:
 - Waktu_beroperasi_per_unit = Σ(Waktu_tempuh_rute + Waktu_turnaround) untuk semua jadwal yang ditugaskan ke unit tersebut
+
+### 6. Indikator Kinerja BBM
+Sistem juga menghitung beberapa metrik terkait BBM:
+- Total BBM (liter): Jumlah total bahan bakar yang digunakan
+- Biaya BBM per penugasan: Rata-rata biaya BBM per penugasan
+- Biaya BBM per km: Efisiensi biaya BBM per kilometer
 
 ## Arsitektur Sistem
 
